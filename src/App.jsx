@@ -297,6 +297,23 @@ function ProductPicker({ products, value, onChange, placeholder }) {
   );
 }
 
+function lunesDe(fecha) {
+  const d = new Date(fecha);
+  const dia = (d.getDay() + 6) % 7; // 0 = lunes
+  d.setDate(d.getDate() - dia);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+function infoSemana(diaDelMes) {
+  const hoy = new Date();
+  const fecha = new Date(hoy.getFullYear(), hoy.getMonth(), diaDelMes);
+  const lunes = lunesDe(fecha);
+  const domingo = new Date(lunes);
+  domingo.setDate(domingo.getDate() + 6);
+  const fmt = (d) => `${d.getDate()}/${d.getMonth() + 1}`;
+  return { key: lunes.toISOString().slice(0, 10), label: `Semana del ${fmt(lunes)} al ${fmt(domingo)}` };
+}
+
 function PedidosTab({ vendor, products }) {
   const [fecha, setFecha] = useState(fechaHoy);
   const [categoria, setCategoria] = useState(db.CATEGORIAS[0]);
@@ -307,6 +324,7 @@ function PedidosTab({ vendor, products }) {
   const [error, setError] = useState("");
   const [pedidos, setPedidos] = useState(null);
   const [loadError, setLoadError] = useState("");
+  const [semanaAbierta, setSemanaAbierta] = useState(null);
 
   const mesActual = sheets.mesDeFecha(fechaHoy());
   const productoSel = products.find((p) => p.id === productoId);
@@ -342,15 +360,30 @@ function PedidosTab({ vendor, products }) {
     setSaving(false);
   };
 
-  const grupos = useMemo(() => {
+  const vista = useMemo(() => {
     if (!pedidos) return null;
-    const map = new Map();
+    const ordenMap = new Map();
     pedidos.forEach((p) => {
       const key = `${p.dia}|${p.cliente}`;
-      if (!map.has(key)) map.set(key, { dia: p.dia, cliente: p.cliente, categoria: p.categoria, lineas: [] });
-      map.get(key).lineas.push(p);
+      if (!ordenMap.has(key)) ordenMap.set(key, { dia: p.dia, cliente: p.cliente, categoria: p.categoria, lineas: [] });
+      ordenMap.get(key).lineas.push(p);
     });
-    return Array.from(map.values()).reverse();
+    const ordenes = Array.from(ordenMap.values());
+
+    const pendientesPorSemana = new Map();
+    const completasPorSemana = new Map();
+
+    ordenes.forEach((orden) => {
+      const completa = orden.lineas.every((l) => l.despachado);
+      const { key, label } = infoSemana(orden.dia);
+      const destino = completa ? completasPorSemana : pendientesPorSemana;
+      if (!destino.has(key)) destino.set(key, { key, label, ordenes: [] });
+      destino.get(key).ordenes.push(orden);
+    });
+
+    const gruposPendientes = Array.from(pendientesPorSemana.values()).sort((a, b) => a.key.localeCompare(b.key));
+    const semanasCompletas = Array.from(completasPorSemana.values()).sort((a, b) => b.key.localeCompare(a.key));
+    return { gruposPendientes, semanasCompletas };
   }, [pedidos]);
 
   if (!vendor.sheetUrl) return null;
@@ -360,13 +393,11 @@ function PedidosTab({ vendor, products }) {
       <div className="ec-card">
         <h3><ClipboardList size={16} /> Nuevo pedido — {mesActual}</h3>
         <div onKeyDown={(e) => { if (e.key === "Enter") submit(e); }}>
-          <div className="ec-row2">
-            <div className="ec-field"><label>Fecha</label><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div>
-            <div className="ec-field"><label>Categoría</label>
-              <select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
-                {db.CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
+          <div className="ec-field"><label>Fecha</label><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div>
+          <div className="ec-field"><label>Categoría</label>
+            <select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
+              {db.CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
           <div className="ec-field"><label>Cliente</label><input value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Nombre del cliente" /></div>
           <div className="ec-field"><label>Producto</label>
@@ -393,28 +424,98 @@ function PedidosTab({ vendor, products }) {
         <button className="ec-btn ec-btn-ghost" style={{ padding: "5px 9px" }} onClick={cargar}><RefreshCw size={13} /></button>
       </div>
       {loadError && <div className="ec-error">{loadError}</div>}
-      {grupos === null ? <Spinner label="Cargando pedidos de la planilla..." /> : grupos.length === 0 ? (
+      {vista === null ? <Spinner label="Cargando pedidos de la planilla..." /> : (vista.gruposPendientes.length === 0 && vista.semanasCompletas.length === 0) ? (
         <div className="ec-empty">Todavía no cargaste ningún pedido este mes.</div>
       ) : (
-        grupos.map((g, i) => {
-          const subtotal = g.lineas.reduce((acc, l) => acc + Number(l.total || 0), 0);
-          const todasDespachadas = g.lineas.every((l) => l.despachado);
-          return (
-            <div className="ec-pedido-row" key={i}>
-              <div className="ec-pedido-top">
-                <div><div className="ec-pedido-cliente">{g.cliente}</div><div className="ec-pedido-meta">Día {g.dia} · {g.categoria}</div></div>
-                <span className={`ec-badge ${todasDespachadas ? "ec-badge-desp" : "ec-badge-pend"}`}>{todasDespachadas ? "Despachado" : "Pendiente"}</span>
-              </div>
-              {g.lineas.map((l) => (
-                <div key={l.fila}>
-                  <div className="ec-linea"><span>{l.producto} × {l.unidades}</span><span>{fmtMoney(l.total)}</span></div>
-                  {l.faltante && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Faltante: {l.faltante}</div>}
+        <>
+          {vista.gruposPendientes.length > 0 && (() => {
+            const todasOrdenes = vista.gruposPendientes.flatMap((s) => s.ordenes);
+            const todasLineas = todasOrdenes.flatMap((o) => o.lineas);
+            const total = todasLineas.reduce((acc, l) => acc + Number(l.total || 0), 0);
+            const abierta = semanaAbierta === "pendientes";
+            return (
+              <div className="ec-pedido-row" style={{ borderColor: TOKENS.rust }}>
+                <div className="ec-pedido-top" style={{ cursor: "pointer" }} onClick={() => setSemanaAbierta(abierta ? null : "pendientes")}>
+                  <div>
+                    <div className="ec-pedido-cliente">Pendientes acumulados</div>
+                    <div className="ec-pedido-meta">{todasOrdenes.length} pedido(s) sin despachar · {fmtMoney(total)}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span className="ec-badge ec-badge-pend">Pendiente</span>
+                    <ChevronRight size={16} style={{ transform: abierta ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
+                  </div>
                 </div>
-              ))}
-              <div className="ec-subtotal"><span>Subtotal</span><span>{fmtMoney(subtotal)}</span></div>
-            </div>
-          );
-        })
+                {abierta && (
+                  <div style={{ marginTop: 10, borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8 }}>
+                    {vista.gruposPendientes.map((sem) => (
+                      <div key={sem.key} style={{ marginBottom: 14 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: TOKENS.textSoft, marginBottom: 6 }}>{sem.label.toUpperCase()}</div>
+                        {sem.ordenes.map((g, i) => {
+                          const subtotal = g.lineas.reduce((acc, l) => acc + Number(l.total || 0), 0);
+                          return (
+                            <div key={i} style={{ marginBottom: 10 }}>
+                              <div className="ec-pedido-top">
+                                <div><div className="ec-pedido-cliente">{g.cliente}</div><div className="ec-pedido-meta">Día {g.dia} · {g.categoria}</div></div>
+                              </div>
+                              {g.lineas.map((l) => (
+                                <div key={l.fila}>
+                                  <div className="ec-linea"><span>{l.producto} × {l.unidades} {l.despachado ? "✓" : ""}</span><span>{fmtMoney(l.total)}</span></div>
+                                  {l.faltante && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Faltante: {l.faltante}</div>}
+                                </div>
+                              ))}
+                              <div className="ec-subtotal"><span>Subtotal</span><span>{fmtMoney(subtotal)}</span></div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {vista.semanasCompletas.map((sem) => {
+            const todasLineas = sem.ordenes.flatMap((o) => o.lineas);
+            const total = todasLineas.reduce((acc, l) => acc + Number(l.total || 0), 0);
+            const abierta = semanaAbierta === sem.key;
+            return (
+              <div className="ec-pedido-row" key={sem.key}>
+                <div className="ec-pedido-top" style={{ cursor: "pointer" }} onClick={() => setSemanaAbierta(abierta ? null : sem.key)}>
+                  <div>
+                    <div className="ec-pedido-cliente">{sem.label}</div>
+                    <div className="ec-pedido-meta">{sem.ordenes.length} pedido(s) · {fmtMoney(total)}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span className="ec-badge ec-badge-desp">Despachado</span>
+                    <ChevronRight size={16} style={{ transform: abierta ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
+                  </div>
+                </div>
+                {abierta && (
+                  <div style={{ marginTop: 10, borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8 }}>
+                    {sem.ordenes.map((g, i) => {
+                      const subtotal = g.lineas.reduce((acc, l) => acc + Number(l.total || 0), 0);
+                      return (
+                        <div key={i} style={{ marginBottom: 12 }}>
+                          <div className="ec-pedido-top">
+                            <div><div className="ec-pedido-cliente">{g.cliente}</div><div className="ec-pedido-meta">Día {g.dia} · {g.categoria}</div></div>
+                          </div>
+                          {g.lineas.map((l) => (
+                            <div key={l.fila}>
+                              <div className="ec-linea"><span>{l.producto} × {l.unidades}</span><span>{fmtMoney(l.total)}</span></div>
+                              {l.faltante && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Faltante: {l.faltante}</div>}
+                            </div>
+                          ))}
+                          <div className="ec-subtotal"><span>Subtotal</span><span>{fmtMoney(subtotal)}</span></div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </>
       )}
     </>
   );
