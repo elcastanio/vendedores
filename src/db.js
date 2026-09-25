@@ -101,6 +101,37 @@ export async function deleteProduct(id) {
   if (error) throw error;
 }
 
+// carga masiva: filas = [{ nombre, minorista, mayorista, granel, comercios }]
+// Actualiza el producto si ya existe uno con ese nombre (sin importar mayúsculas),
+// o lo crea si es nuevo.
+export async function bulkUpsertProducts(rows, existingProducts) {
+  const porNombre = {};
+  existingProducts.forEach((p) => { porNombre[p.nombre.trim().toLowerCase()] = p.id; });
+  const paraGuardar = rows
+    .filter((r) => r.nombre && String(r.nombre).trim())
+    .map((r) => {
+      const nombre = String(r.nombre).trim();
+      const id = porNombre[nombre.toLowerCase()] || uid();
+      return {
+        id,
+        nombre,
+        precio_minorista: Number(r.minorista) || 0,
+        precio_mayorista: Number(r.mayorista) || 0,
+        precio_granel: Number(r.granel) || 0,
+        precio_comercios: Number(r.comercios) || 0,
+      };
+    });
+  if (paraGuardar.length === 0) return { guardados: 0 };
+  // Supabase soporta hasta cierto tamaño por request; los mandamos en tandas.
+  const TAMANIO_TANDA = 500;
+  for (let i = 0; i < paraGuardar.length; i += TAMANIO_TANDA) {
+    const tanda = paraGuardar.slice(i, i + TAMANIO_TANDA);
+    const { error } = await supabase.from("products").upsert(tanda, { onConflict: "id" });
+    if (error) throw error;
+  }
+  return { guardados: paraGuardar.length };
+}
+
 // ---------- OBJETIVOS ----------
 
 export async function fetchObjetivos(mes) {
