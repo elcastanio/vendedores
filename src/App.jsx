@@ -393,11 +393,7 @@ function PedidosTab({ vendor, products }) {
       <div className="ec-card">
         <h3><ClipboardList size={16} /> Nuevo pedido — {mesActual}</h3>
         <div onKeyDown={(e) => { if (e.key === "Enter") submit(e); }}>
-          <div className="ec-field"><label>Día del pedido</label>
-            <select value={dia} onChange={(e) => setDia(Number(e.target.value))}>
-              {Array.from({ length: diasEnMes }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d} de {mesActual}</option>)}
-            </select>
-          </div>
+          <div className="ec-field"><label>Fecha</label><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div>
           <div className="ec-field"><label>Categoría</label>
             <select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
               {db.CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
