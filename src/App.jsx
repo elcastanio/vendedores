@@ -162,7 +162,7 @@ function LoginScreen({ vendors, onVendorLogin, onAdminLogin }) {
   return (
     <div className="ec-shell">
       <div className="ec-login-wrap">
-        <div className="ec-serif" style={{ fontSize: 30, fontWeight: 600, marginBottom: 4 }}>El <span style={{ color: TOKENS.rust }}>Castaño</span></div>
+        <img src="/logo.png" alt="El Castaño" style={{ width: "72%", maxWidth: 280, marginBottom: 14 }} />
         <div className="ec-sub" style={{ marginBottom: 30 }}>Pedidos, objetivos y stock para tu red de vendedores</div>
         <div onKeyDown={(e) => { if (e.key === "Enter") submit(e); }}>
           {mode === "vendedor" ? (
@@ -214,7 +214,7 @@ function VendorApp({ vendor, products, onLogout }) {
   return (
     <div className="ec-shell">
       <div className="ec-topbar">
-        <div><div className="ec-brand ec-serif">El <span>Castaño</span></div><div className="ec-sub">{vendor.nombre}</div></div>
+        <div><img src="/logo.png" alt="El Castaño" style={{ height: 22 }} /><div className="ec-sub" style={{ marginTop: 4 }}>{vendor.nombre}</div></div>
         <button className="ec-btn ec-btn-ghost" onClick={onLogout}><LogOut size={14} /> Salir</button>
       </div>
       <div className="ec-content">
@@ -818,7 +818,7 @@ function AdminApp({ vendors, products, onLogout, refreshVendors, refreshProducts
   return (
     <div className="ec-admin-shell">
       <div className="ec-topbar">
-        <div><div className="ec-brand ec-serif">El <span>Castaño</span> · Admin</div><div className="ec-sub">Panel de gestión de vendedores</div></div>
+        <div><div style={{ display: "flex", alignItems: "center", gap: 8 }}><img src="/logo.png" alt="El Castaño" style={{ height: 20 }} /><span className="ec-serif" style={{ fontSize: 14, color: TOKENS.textSoft }}>· Admin</span></div><div className="ec-sub" style={{ marginTop: 4 }}>Panel de gestión de vendedores</div></div>
         <button className="ec-btn ec-btn-ghost" onClick={onLogout}><LogOut size={14} /> Salir</button>
       </div>
       <div className="ec-admin-tabs">
