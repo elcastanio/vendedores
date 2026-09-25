@@ -348,7 +348,8 @@ function PedidosTab({ vendor, products }) {
   const [cliente, setCliente] = useState("");
   const [productoId, setProductoId] = useState("");
   const [unidades, setUnidades] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [carrito, setCarrito] = useState([]);
+  const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
   const [pedidos, setPedidos] = useState(null);
   const [loadError, setLoadError] = useState("");
@@ -357,7 +358,8 @@ function PedidosTab({ vendor, products }) {
   const mesActual = sheets.mesDeFecha(fechaHoy());
   const productoSel = products.find((p) => p.id === productoId);
   const precio = db.precioProducto(productoSel, categoria);
-  const total = precio * (Number(unidades) || 0);
+  const totalLinea = precio * (Number(unidades) || 0);
+  const totalCarrito = carrito.reduce((acc, l) => acc + l.total, 0);
 
   const cargar = useCallback(async () => {
     if (!vendor.sheetUrl) return;
@@ -368,39 +370,64 @@ function PedidosTab({ vendor, products }) {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const submit = async (e) => {
-    if (e && e.preventDefault) e.preventDefault();
+  const agregarAlCarrito = () => {
     setError("");
-    if (!cliente.trim() || !productoSel || !unidades || Number(unidades) <= 0) {
-      setError("Completá cliente, producto y unidades (mayor a 0).");
+    if (!productoSel || !unidades || Number(unidades) <= 0) {
+      setError("Elegí un producto y unidades (mayor a 0).");
       return;
     }
-    setSaving(true);
+    setCarrito([...carrito, {
+      id: `${productoSel.id}-${Date.now()}`,
+      productoNombre: productoSel.nombre,
+      unidades: Number(unidades),
+      precio,
+      total: totalLinea,
+    }]);
+    setProductoId("");
+    setUnidades("");
+  };
+
+  const quitarDelCarrito = (id) => setCarrito(carrito.filter((l) => l.id !== id));
+
+  const guardarPedido = async () => {
+    setError("");
+    if (!cliente.trim()) { setError("Completá el nombre del cliente."); return; }
+    if (carrito.length === 0) { setError("Agregá al menos un producto al pedido."); return; }
+    setGuardando(true);
     try {
-      await sheets.addPedidoSheet(vendor.sheetUrl, {
-        fecha, categoria, cliente: cliente.trim(), producto: productoSel.nombre, unidades: Number(unidades), precio,
-      });
-      setUnidades("");
+      for (const linea of carrito) {
+        await sheets.addPedidoSheet(vendor.sheetUrl, {
+          fecha, categoria, cliente: cliente.trim(), producto: linea.productoNombre, unidades: linea.unidades, precio: linea.precio,
+        });
+      }
+      setCliente("");
+      setCarrito([]);
       cargar();
     } catch (err) {
       setError("No se pudo guardar el pedido: " + err.message);
     }
-    setSaving(false);
+    setGuardando(false);
   };
 
+  // Agrupa líneas consecutivas del mismo día y cliente como un mismo pedido.
+  // Así, si dos clientes distintos comparten nombre pero se cargaron en
+  // momentos distintos (con otras líneas en el medio), no quedan mezclados.
   const vista = useMemo(() => {
     if (!pedidos) return null;
-    const ordenMap = new Map();
-    pedidos.forEach((p) => {
-      const key = `${p.dia}|${p.cliente}`;
-      if (!ordenMap.has(key)) ordenMap.set(key, { dia: p.dia, cliente: p.cliente, categoria: p.categoria, lineas: [] });
-      ordenMap.get(key).lineas.push(p);
+    const ordenadas = [...pedidos].sort((a, b) => a.fila - b.fila);
+    const ordenes = [];
+    let actual = null;
+    ordenadas.forEach((p) => {
+      if (actual && actual.dia === p.dia && actual.cliente === p.cliente) {
+        actual.lineas.push(p);
+      } else {
+        actual = { dia: p.dia, cliente: p.cliente, categoria: p.categoria, lineas: [p] };
+        ordenes.push(actual);
+      }
     });
-    const ordenes = Array.from(ordenMap.values());
 
     const pendientesPorSemana = new Map();
     const completasPorSemana = new Map();
-
     ordenes.forEach((orden) => {
       const completa = orden.lineas.every((l) => l.despachado);
       const { key, label } = infoSemana(orden.dia);
@@ -420,7 +447,7 @@ function PedidosTab({ vendor, products }) {
     <>
       <div className="ec-card">
         <h3><ClipboardList size={16} /> Nuevo pedido — {mesActual}</h3>
-        <div onKeyDown={(e) => { if (e.key === "Enter") submit(e); }}>
+        <div onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); agregarAlCarrito(); } }}>
           <FechaField label="Fecha" value={fecha} onChange={setFecha} />
           <div className="ec-field"><label>Categoría</label>
             <select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
@@ -428,6 +455,24 @@ function PedidosTab({ vendor, products }) {
             </select>
           </div>
           <div className="ec-field"><label>Cliente</label><input value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Nombre del cliente" /></div>
+
+          {carrito.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              {carrito.map((l) => (
+                <div className="ec-linea" key={l.id}>
+                  <span>{l.productoNombre} × {l.unidades}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {fmtMoney(l.total)}
+                    <button type="button" onClick={() => quitarDelCarrito(l.id)} style={{ background: "none", border: "none", cursor: "pointer", color: TOKENS.danger, padding: 0 }}>
+                      <X size={14} />
+                    </button>
+                  </span>
+                </div>
+              ))}
+              <div className="ec-subtotal"><span>Total del pedido</span><span>{fmtMoney(totalCarrito)}</span></div>
+            </div>
+          )}
+
           <div className="ec-field"><label>Producto</label>
             {products.length === 0 ? (
               <input disabled value="Sin productos cargados" />
@@ -439,10 +484,12 @@ function PedidosTab({ vendor, products }) {
             <div className="ec-field"><label>Unidades</label><input type="number" min="1" value={unidades} onChange={(e) => setUnidades(e.target.value)} placeholder="0" /></div>
             <div className="ec-field"><label>Precio</label><input value={fmtMoney(precio)} disabled /></div>
           </div>
-          <div className="ec-summary-item" style={{ marginBottom: 12 }}><div className="label">TOTAL DE ESTA LÍNEA</div><div className="value">{fmtMoney(total)}</div></div>
           {error && <div className="ec-error">{error}</div>}
-          <button className="ec-btn ec-btn-primary ec-btn-block" disabled={saving} type="button" onClick={submit}>
-            {saving ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <Plus size={15} />} Cargar línea de pedido
+          <button className="ec-btn ec-btn-ghost ec-btn-block" type="button" onClick={agregarAlCarrito} style={{ marginBottom: 10 }}>
+            <Plus size={15} /> Agregar producto al pedido
+          </button>
+          <button className="ec-btn ec-btn-primary ec-btn-block" disabled={guardando} type="button" onClick={guardarPedido}>
+            {guardando ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check size={15} />} Guardar pedido
           </button>
         </div>
       </div>
