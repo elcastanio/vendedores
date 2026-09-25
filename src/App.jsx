@@ -42,6 +42,8 @@ function GlobalStyle() {
       .ec-field input:disabled { background: ${TOKENS.cream}; color: ${TOKENS.textSoft}; }
       .ec-field input:focus, .ec-field select:focus, .ec-field textarea:focus { outline: 2px solid ${TOKENS.olive}; outline-offset: 1px; }
       .ec-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .ec-row2 > .ec-field { min-width: 0; }
+      .ec-row2 > .ec-field input, .ec-row2 > .ec-field select { min-width: 0; width: 100%; box-sizing: border-box; }
       .ec-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: none; border-radius: 7px; padding: 11px 16px; font-size: 14.5px; font-weight: 600; font-family: inherit; cursor: pointer; }
       .ec-btn:focus-visible { outline: 2px solid ${TOKENS.oliveDark}; outline-offset: 2px; }
       .ec-btn-primary { background: ${TOKENS.olive}; color: #fff; }
