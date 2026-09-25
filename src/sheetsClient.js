@@ -59,3 +59,10 @@ export async function fetchRendicionesSheet(sheetUrl) {
   const data = await llamar("fetchRendiciones", { sheetId });
   return data.rendiciones || [];
 }
+
+// Le da formato/validación a las columnas Despachado y Faltante de una
+// solapa, y normaliza las filas ya cargadas. Se llama a pedido del admin.
+export async function prepararColumnasSheet(sheetUrl, mes) {
+  const sheetId = extraerSheetId(sheetUrl);
+  return llamar("prepararColumnas", { sheetId, mes });
+}
