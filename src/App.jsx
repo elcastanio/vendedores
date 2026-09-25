@@ -39,6 +39,10 @@ function GlobalStyle() {
         font-size: 14.5px; font-family: inherit; background: #fff; color: ${TOKENS.text};
       }
       .ec-field input[type="date"] { font-size: 13.5px; min-width: 0; width: 100%; max-width: 100%; box-sizing: border-box; display: block; }
+      .ec-fecha-display {
+        width: 100%; padding: 10px 11px; border: 1px solid ${TOKENS.border}; border-radius: 7px;
+        font-size: 14.5px; font-family: inherit; background: #fff; color: ${TOKENS.text}; box-sizing: border-box;
+      }
       .ec-field input:disabled { background: ${TOKENS.cream}; color: ${TOKENS.textSoft}; }
       .ec-field input:focus, .ec-field select:focus, .ec-field textarea:focus { outline: 2px solid ${TOKENS.olive}; outline-offset: 1px; }
       .ec-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -213,6 +217,30 @@ function VendorApp({ vendor, products, onLogout }) {
 
 function TabBtn({ active, onClick, icon, label }) {
   return <button className={`ec-tab ${active ? "active" : ""}`} onClick={onClick}>{icon}{label}</button>;
+}
+
+// Muestra la fecha con nuestro propio formato y estilo (igual a los demás
+// campos), pero el selector nativo de calendario del celular sigue debajo,
+// invisible, para que se siga pudiendo tocar y elegir con el dedo como
+// siempre. Así evitamos que iOS/Android dibujen el cuadro a su manera.
+function FechaField({ label, value, onChange }) {
+  const d = new Date(value + "T00:00:00");
+  const valido = !isNaN(d.getTime());
+  const texto = valido ? `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}` : "Elegir fecha";
+  return (
+    <div className="ec-field">
+      <label>{label}</label>
+      <div style={{ position: "relative" }}>
+        <div className="ec-fecha-display">{texto}</div>
+        <input
+          type="date"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, border: "none", padding: 0, margin: 0 }}
+        />
+      </div>
+    </div>
+  );
 }
 
 // Buscador de producto con autocompletado — reemplaza al <select> nativo,
@@ -393,7 +421,7 @@ function PedidosTab({ vendor, products }) {
       <div className="ec-card">
         <h3><ClipboardList size={16} /> Nuevo pedido — {mesActual}</h3>
         <div onKeyDown={(e) => { if (e.key === "Enter") submit(e); }}>
-          <div className="ec-field"><label>Fecha</label><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div>
+          <FechaField label="Fecha" value={fecha} onChange={setFecha} />
           <div className="ec-field"><label>Categoría</label>
             <select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
               {db.CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -612,7 +640,7 @@ function StockTab({ vendor, products }) {
       <div className="ec-card">
         <h3><Package size={16} /> Registrar mercadería de más</h3>
         <div className="ec-sub" style={{ marginBottom: 12 }}>Si en un envío te llegó algo de más, registralo acá. Cuando lo vendas, marcalo como "Vendido".</div>
-        <div className="ec-field"><label>Fecha</label><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div>
+        <FechaField label="Fecha" value={fecha} onChange={setFecha} />
         <div className="ec-field"><label>Producto</label>
           <ProductPicker products={products} value={productoId} onChange={setProductoId} placeholder="Escribí para buscar un producto..." />
         </div>
