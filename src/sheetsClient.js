@@ -66,3 +66,19 @@ export async function prepararColumnasSheet(sheetUrl, mes) {
   const sheetId = extraerSheetId(sheetUrl);
   return llamar("prepararColumnas", { sheetId, mes });
 }
+
+export async function addStockSheet(sheetUrl, { fecha, producto, unidades, observacion }) {
+  const sheetId = extraerSheetId(sheetUrl);
+  return llamar("addStock", { sheetId, fecha, producto, unidades, observacion });
+}
+
+export async function fetchStockSheet(sheetUrl) {
+  const sheetId = extraerSheetId(sheetUrl);
+  const data = await llamar("fetchStock", { sheetId });
+  return data.stock || [];
+}
+
+export async function updateStockEstadoSheet(sheetUrl, fila, estado) {
+  const sheetId = extraerSheetId(sheetUrl);
+  return llamar("updateStockEstado", { sheetId, fila, estado });
+}
