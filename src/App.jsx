@@ -192,6 +192,8 @@ function VendorApp({ vendor, products, onLogout }) {
   const [pedidosError, setPedidosError] = useState("");
   const [rendiciones, setRendiciones] = useState(null);
   const [rendicionesError, setRendicionesError] = useState("");
+  const [stock, setStock] = useState(null);
+  const [stockError, setStockError] = useState("");
   const mesActualVendor = sheets.mesDeFecha(fechaHoy());
 
   const cargarPedidosMes = useCallback(async () => {
@@ -208,8 +210,16 @@ function VendorApp({ vendor, products, onLogout }) {
     catch (e) { setRendicionesError(e.message); }
   }, [vendor.sheetUrl]);
 
+  const cargarStock = useCallback(async () => {
+    if (!vendor.sheetUrl) return;
+    setStockError("");
+    try { setStock(await sheets.fetchStockSheet(vendor.sheetUrl)); }
+    catch (e) { setStockError(e.message); }
+  }, [vendor.sheetUrl]);
+
   useEffect(() => { cargarPedidosMes(); }, [cargarPedidosMes]);
   useEffect(() => { cargarRendiciones(); }, [cargarRendiciones]);
+  useEffect(() => { cargarStock(); }, [cargarStock]);
 
   return (
     <div className="ec-shell">
@@ -225,7 +235,7 @@ function VendorApp({ vendor, products, onLogout }) {
         )}
         {tab === "pedidos" && <PedidosTab vendor={vendor} products={products} pedidos={pedidosMes} loadError={pedidosError} onChanged={cargarPedidosMes} mesReal={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "objetivo" && <ObjetivoTab vendor={vendor} pedidos={pedidosMes} loadError={pedidosError} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
-        {tab === "stock" && <StockTab vendor={vendor} products={products} />}
+        {tab === "stock" && <StockTab vendor={vendor} products={products} stock={stock} loadError={stockError} onChanged={cargarStock} />}
         {tab === "rendiciones" && <RendicionesTab vendor={vendor} rendiciones={rendiciones} error={rendicionesError} onChanged={cargarRendiciones} />}
       </div>
       <div className="ec-tabbar">
@@ -233,6 +243,7 @@ function VendorApp({ vendor, products, onLogout }) {
         <TabBtn active={tab === "objetivo"} onClick={() => setTab("objetivo")} icon={<Target size={17} />} label="Objetivo" />
         <TabBtn active={tab === "stock"} onClick={() => setTab("stock")} icon={<Package size={17} />} label="Stock" />
         <TabBtn active={tab === "rendiciones"} onClick={() => setTab("rendiciones")} icon={<Wallet size={17} />} label="Rendiciones" />
+
       </div>
     </div>
   );
@@ -736,33 +747,33 @@ function ObjetivoTab({ vendor, pedidos, loadError, mesRealNombre, mesRealClave }
   );
 }
 
-function StockTab({ vendor, products }) {
+function StockTab({ vendor, products, stock, loadError, onChanged }) {
   const [fecha, setFecha] = useState(fechaHoy);
   const [productoId, setProductoId] = useState("");
   const [unidades, setUnidades] = useState("");
   const [observacion, setObservacion] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [stock, setStock] = useState(null);
 
-  const cargar = useCallback(async () => {
-    try { setStock(await db.fetchStockExtra(vendor.id)); } catch (e) { setError(e.message); }
-  }, [vendor.id]);
-  useEffect(() => { cargar(); }, [cargar]);
-
-  const productoNombre = (id) => products.find((p) => p.id === id)?.nombre || "Producto eliminado";
+  const productoSel = products.find((p) => p.id === productoId);
 
   const agregar = async () => {
     setError("");
-    if (!productoId || !unidades || Number(unidades) <= 0) { setError("Elegí un producto y una cantidad mayor a 0."); return; }
+    if (!productoSel || !unidades || Number(unidades) <= 0) { setError("Elegí un producto y una cantidad mayor a 0."); return; }
     setSaving(true);
     try {
-      await db.addStockExtra(vendor.id, { fecha, productoId, unidades: Number(unidades), observacion });
-      setUnidades(""); setObservacion(""); cargar();
+      await sheets.addStockSheet(vendor.sheetUrl, { fecha, producto: productoSel.nombre, unidades: Number(unidades), observacion });
+      setUnidades(""); setObservacion(""); setProductoId("");
+      onChanged();
     } catch (e) { setError("No se pudo guardar: " + e.message); }
     setSaving(false);
   };
-  const marcarVendido = async (id) => { try { await db.marcarStockVendido(id); cargar(); } catch (e) { setError(e.message); } };
+  const marcarVendido = async (fila) => {
+    try { await sheets.updateStockEstadoSheet(vendor.sheetUrl, fila, "Vendido"); onChanged(); }
+    catch (e) { setError(e.message); }
+  };
+
+  if (!vendor.sheetUrl) return null;
 
   return (
     <>
@@ -780,18 +791,22 @@ function StockTab({ vendor, products }) {
           {saving ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <Plus size={15} />} Registrar
         </button>
       </div>
-      <div style={{ fontSize: 13, fontWeight: 600, margin: "18px 0 10px", color: TOKENS.textSoft }}>REGISTROS</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "18px 0 10px" }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: TOKENS.textSoft }}>REGISTROS</span>
+        <button className="ec-btn ec-btn-ghost" style={{ padding: "5px 9px" }} onClick={onChanged}><RefreshCw size={13} /></button>
+      </div>
+      {loadError && <div className="ec-error">{loadError}</div>}
       {stock === null ? <Spinner label="Cargando..." /> : stock.length === 0 ? (
         <div className="ec-empty">Todavía no registraste mercadería de más.</div>
       ) : (
-        stock.map((s) => (
-          <div className="ec-pedido-row" key={s.id}>
+        [...stock].reverse().map((s) => (
+          <div className="ec-pedido-row" key={s.fila}>
             <div className="ec-pedido-top">
-              <div><div className="ec-pedido-cliente">{productoNombre(s.productoId)} × {s.unidades}</div><div className="ec-pedido-meta">{s.fecha}</div></div>
+              <div><div className="ec-pedido-cliente">{s.producto} × {s.unidades}</div><div className="ec-pedido-meta">{s.fecha}</div></div>
               <span className={`ec-badge ${s.estado === "Vendido" ? "ec-badge-desp" : "ec-badge-pend"}`}>{s.estado}</span>
             </div>
             {s.observacion && <div className="ec-note">{s.observacion}</div>}
-            {s.estado !== "Vendido" && <button className="ec-btn ec-btn-ghost" style={{ marginTop: 8, padding: "6px 10px" }} onClick={() => marcarVendido(s.id)}>Marcar como vendido</button>}
+            {s.estado !== "Vendido" && <button className="ec-btn ec-btn-ghost" style={{ marginTop: 8, padding: "6px 10px" }} onClick={() => marcarVendido(s.fila)}>Marcar como vendido</button>}
           </div>
         ))
       )}
