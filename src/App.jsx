@@ -224,7 +224,7 @@ function VendorApp({ vendor, products, onLogout }) {
           </div></div>
         )}
         {tab === "pedidos" && <PedidosTab vendor={vendor} products={products} pedidos={pedidosMes} loadError={pedidosError} onChanged={cargarPedidosMes} mesReal={mesActualVendor} />}
-        {tab === "objetivo" && <ObjetivoTab vendor={vendor} pedidos={pedidosMes} loadError={pedidosError} />}
+        {tab === "objetivo" && <ObjetivoTab vendor={vendor} pedidos={pedidosMes} loadError={pedidosError} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "stock" && <StockTab vendor={vendor} products={products} />}
         {tab === "rendiciones" && <RendicionesTab vendor={vendor} rendiciones={rendiciones} error={rendicionesError} onChanged={cargarRendiciones} />}
       </div>
@@ -628,9 +628,12 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal }
   );
 }
 
-function ObjetivoTab({ vendor, pedidos, loadError }) {
+function ObjetivoTab({ vendor, pedidos, loadError, mesRealNombre, mesRealClave }) {
   const [objetivos, setObjetivos] = useState(null);
   const [error, setError] = useState("");
+  const [mesSel, setMesSel] = useState(mesRealClave);
+  const [pedidosPropios, setPedidosPropios] = useState(null);
+  const [errorPropio, setErrorPropio] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -639,17 +642,43 @@ function ObjetivoTab({ vendor, pedidos, loadError }) {
     })();
   }, []);
 
-  if (objetivos === null || pedidos === null) return <Spinner label="Calculando objetivo..." />;
-  if (error || loadError) return <div className="ec-error">{error || loadError}</div>;
+  const nombreSolapaSel = sheets.nombreMesDeValor(mesSel);
+  const esMesReal = mesSel === mesRealClave;
 
-  const mesActual = currentMonthKey();
-  const objetivoRow = objetivos.find((o) => o.vendor_id === vendor.id && o.mes === mesActual);
+  const cargarMesPropio = useCallback(async () => {
+    if (!vendor.sheetUrl || esMesReal) return;
+    setErrorPropio("");
+    try { setPedidosPropios(await sheets.fetchPedidosSheet(vendor.sheetUrl, nombreSolapaSel)); }
+    catch (e) { setErrorPropio(e.message); }
+  }, [vendor.sheetUrl, nombreSolapaSel, esMesReal]);
+
+  useEffect(() => { if (!esMesReal) cargarMesPropio(); }, [cargarMesPropio, esMesReal]);
+
+  const pedidosDelMes = esMesReal ? pedidos : pedidosPropios;
+  const errorDelMes = esMesReal ? loadError : errorPropio;
+
+  if (objetivos === null || pedidosDelMes === null) return (
+    <div className="ec-card">
+      <h3><Target size={16} /> Objetivo</h3>
+      <div className="ec-field" style={{ maxWidth: 220 }}><label>Mes</label><input type="month" value={mesSel} onChange={(e) => setMesSel(e.target.value)} /></div>
+      <Spinner label="Calculando objetivo..." />
+    </div>
+  );
+  if (error || errorDelMes) return (
+    <div className="ec-card">
+      <h3><Target size={16} /> Objetivo</h3>
+      <div className="ec-field" style={{ maxWidth: 220 }}><label>Mes</label><input type="month" value={mesSel} onChange={(e) => setMesSel(e.target.value)} /></div>
+      <div className="ec-error">{error || errorDelMes}</div>
+    </div>
+  );
+
+  const objetivoRow = objetivos.find((o) => o.vendor_id === vendor.id && o.mes === mesSel);
   const objetivo = Number(objetivoRow?.objetivo || 0);
 
   const porCategoria = {};
   db.CATEGORIAS.forEach((c) => (porCategoria[c] = 0));
   let totalVentas = 0;
-  pedidos.forEach((p) => {
+  pedidosDelMes.forEach((p) => {
     const t = Number(p.total || 0);
     porCategoria[p.categoria] = (porCategoria[p.categoria] || 0) + t;
     totalVentas += t;
@@ -660,7 +689,8 @@ function ObjetivoTab({ vendor, pedidos, loadError }) {
 
   return (
     <div className="ec-card">
-      <h3><Target size={16} /> Objetivo del mes</h3>
+      <h3><Target size={16} /> Objetivo de {nombreSolapaSel}</h3>
+      <div className="ec-field" style={{ maxWidth: 220, marginBottom: 16 }}><label>Mes a consultar</label><input type="month" value={mesSel} onChange={(e) => setMesSel(e.target.value)} /></div>
       <div className="ec-big-num">{fmtMoney(totalVentas)}</div>
       <div className="ec-sub" style={{ marginBottom: 14 }}>vendido sobre una meta de {objetivo > 0 ? fmtMoney(objetivo) : "sin definir"}</div>
       <div className="ec-progress-track"><div className="ec-progress-fill" style={{ width: `${pct}%` }} /></div>
@@ -671,7 +701,7 @@ function ObjetivoTab({ vendor, pedidos, loadError }) {
         ))}
       </div>
       <div className="ec-summary-item" style={{ marginTop: 10 }}>
-        <div className="label">TU COMISIÓN ESTE MES ({Math.round((vendor.comision || 0) * 100)}%)</div>
+        <div className="label">TU COMISIÓN DE {nombreSolapaSel.toUpperCase()} ({Math.round((vendor.comision || 0) * 100)}%)</div>
         <div className="value">{fmtMoney(comisionGanada)}</div>
       </div>
     </div>
