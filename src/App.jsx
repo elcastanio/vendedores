@@ -693,6 +693,69 @@ function VendedoresAdmin({ vendors, refreshVendors }) {
   );
 }
 
+// Busca la solapa más apropiada ("Precios" si existe, si no la primera) y
+// dentro de ella detecta cuál es la fila real de encabezados (puede no ser
+// la primera, como en los archivos de El Castaño que arrancan con un título).
+// Reconoce nombres de columna alternativos (Nombre / Nombre producto / Producto,
+// Granel / Granel/Industrias, etc.) para no obligar a reformatear el archivo.
+function parseCatalogWorkbook(wb) {
+  const nombreSolapa = wb.SheetNames.find((n) => n.trim().toLowerCase() === "precios") || wb.SheetNames[0];
+  const ws = wb.Sheets[nombreSolapa];
+  const filas = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+
+  const ALIAS = {
+    nombre: ["nombre producto", "nombre", "producto"],
+    minorista: ["minorista"],
+    mayorista: ["mayorista"],
+    granel: ["granel/industrias", "granel"],
+    comercios: ["comercios"],
+  };
+
+  let headerRowIdx = -1;
+  let colIndex = {};
+  for (let i = 0; i < Math.min(filas.length, 15); i++) {
+    const celdas = filas[i].map((c) => String(c).trim().toLowerCase());
+    const tieneNombre = celdas.some((c) => ALIAS.nombre.includes(c));
+    if (!tieneNombre) continue;
+    const encontrar = (alias) => {
+      const idx = celdas.findIndex((c) => alias.includes(c));
+      return idx;
+    };
+    colIndex = {
+      nombre: encontrar(ALIAS.nombre),
+      minorista: encontrar(ALIAS.minorista),
+      mayorista: encontrar(ALIAS.mayorista),
+      granel: encontrar(ALIAS.granel),
+      comercios: encontrar(ALIAS.comercios),
+    };
+    headerRowIdx = i;
+    break;
+  }
+  if (headerRowIdx === -1) return { solapa: nombreSolapa, filas: [] };
+
+  const num = (v) => {
+    if (v === "" || v === null || v === undefined) return 0;
+    if (typeof v === "number") return v;
+    const limpio = String(v).replace(/[^0-9.,-]/g, "").replace(",", ".");
+    return Number(limpio) || 0;
+  };
+
+  const resultado = [];
+  for (let i = headerRowIdx + 1; i < filas.length; i++) {
+    const fila = filas[i];
+    const nombre = colIndex.nombre >= 0 ? String(fila[colIndex.nombre] || "").trim() : "";
+    if (!nombre) continue;
+    resultado.push({
+      nombre,
+      minorista: colIndex.minorista >= 0 ? num(fila[colIndex.minorista]) : 0,
+      mayorista: colIndex.mayorista >= 0 ? num(fila[colIndex.mayorista]) : 0,
+      granel: colIndex.granel >= 0 ? num(fila[colIndex.granel]) : 0,
+      comercios: colIndex.comercios >= 0 ? num(fila[colIndex.comercios]) : 0,
+    });
+  }
+  return { solapa: nombreSolapa, filas: resultado };
+}
+
 function ProductosAdmin({ products, refreshProducts }) {
   const [form, setForm] = useState({ nombre: "", precio_minorista: "", precio_mayorista: "", precio_granel: "", precio_comercios: "" });
   const [error, setError] = useState("");
@@ -720,20 +783,12 @@ function ProductosAdmin({ products, refreshProducts }) {
     try {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf);
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
-      const parseadas = rows.map((r) => ({
-        nombre: r.Nombre ?? r.nombre ?? r.Producto ?? r.producto ?? "",
-        minorista: r.Minorista ?? r.minorista ?? 0,
-        mayorista: r.Mayorista ?? r.mayorista ?? 0,
-        granel: r.Granel ?? r.granel ?? 0,
-        comercios: r.Comercios ?? r.comercios ?? 0,
-      })).filter((r) => r.nombre);
+      const { solapa, filas: parseadas } = parseCatalogWorkbook(wb);
       if (parseadas.length === 0) {
-        setError("El archivo no tiene filas con una columna Nombre (o Producto).");
+        setError(`No encontré filas con nombre de producto en la solapa "${solapa}". Revisá que tenga una columna Nombre (o "Nombre producto"/"Producto").`);
       } else {
         const res = await db.bulkUpsertProducts(parseadas, products);
-        setOk(`Se guardaron ${res.guardados} producto(s).`);
+        setOk(`Leí la solapa "${solapa}" y guardé ${res.guardados} producto(s).`);
         refreshProducts();
       }
     } catch (err) { setError("No se pudo leer el archivo: " + err.message); }
@@ -752,10 +807,10 @@ function ProductosAdmin({ products, refreshProducts }) {
       <div className="ec-card">
         <h3><Upload size={16} /> Carga masiva desde Excel</h3>
         <div className="ec-sub" style={{ marginBottom: 12 }}>
-          El archivo tiene que tener una columna <b>Nombre</b> (o <b>Producto</b>) y, opcionalmente,
-          <b> Minorista</b>, <b>Mayorista</b>, <b>Granel</b> y <b>Comercios</b> con los precios de cada uno.
-          Si el nombre ya existe (sin importar mayúsculas/minúsculas), actualiza sus precios; si es nuevo, lo agrega.
-          Ideal para cargar de una sola vez un catálogo grande.
+          Detecta sola la solapa "Precios" (si existe) y la fila de encabezados, aunque no sea la primera.
+          Reconoce columnas Nombre / "Nombre producto" / Producto, y Minorista, Mayorista, Comercios,
+          Granel o "Granel/Industrias". Si el nombre ya existe (sin importar mayúsculas/minúsculas),
+          actualiza sus precios; si es nuevo, lo agrega. Ideal para subir tu archivo de precios tal cual.
         </div>
         <label className="ec-btn ec-btn-primary" style={{ cursor: "pointer" }}>
           <Upload size={15} /> {uploading ? "Cargando..." : "Elegir archivo Excel"}
