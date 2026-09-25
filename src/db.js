@@ -4,11 +4,11 @@ function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-export const CATEGORIAS = ["Minorista", "Mayorista", "Granel", "Comercios"];
+export const CATEGORIAS = ["Minorista", "Mayorista", "Granel", "Comercio"];
 
 function precioCampoDeCategoria(categoria) {
   return (
-    { Minorista: "precio_minorista", Mayorista: "precio_mayorista", Granel: "precio_granel", Comercios: "precio_comercios" }[categoria] ||
+    { Minorista: "precio_minorista", Mayorista: "precio_mayorista", Granel: "precio_granel", Comercio: "precio_comercios" }[categoria] ||
     "precio_minorista"
   );
 }
