@@ -212,6 +212,88 @@ function TabBtn({ active, onClick, icon, label }) {
   return <button className={`ec-tab ${active ? "active" : ""}`} onClick={onClick}>{icon}{label}</button>;
 }
 
+// Buscador de producto con autocompletado — reemplaza al <select> nativo,
+// que se vuelve inusable con más de unos pocos cientos de productos.
+function ProductPicker({ products, value, onChange, placeholder }) {
+  const seleccionado = products.find((p) => p.id === value);
+  const [query, setQuery] = useState(seleccionado?.nombre || "");
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const boxRef = React.useRef(null);
+
+  useEffect(() => {
+    const actual = products.find((p) => p.id === value);
+    setQuery(actual?.nombre || "");
+  }, [value, products]);
+
+  const filtrados = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const base = q ? products.filter((p) => p.nombre.toLowerCase().includes(q)) : products;
+    return base.slice(0, 40);
+  }, [query, products]);
+
+  useEffect(() => {
+    function onClickOutside(e) {
+      if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  const elegir = (p) => {
+    onChange(p.id);
+    setQuery(p.nombre);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={boxRef} style={{ position: "relative" }}>
+      <input
+        value={query}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); setHighlight(0); if (!e.target.value) onChange(""); }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") { e.preventDefault(); setHighlight((h) => Math.min(h + 1, filtrados.length - 1)); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight((h) => Math.max(h - 1, 0)); }
+          else if (e.key === "Enter") { e.preventDefault(); if (filtrados[highlight]) elegir(filtrados[highlight]); }
+          else if (e.key === "Escape") { setOpen(false); }
+        }}
+        placeholder={placeholder || "Escribí para buscar..."}
+        autoComplete="off"
+      />
+      {open && (
+        <div style={{
+          position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20,
+          background: "#fff", border: `1px solid ${TOKENS.border}`, borderRadius: 8,
+          maxHeight: 220, overflowY: "auto", marginTop: 4, boxShadow: "0 6px 16px rgba(43,33,21,0.12)",
+        }}>
+          {filtrados.length === 0 ? (
+            <div style={{ padding: "10px 12px", fontSize: 13, color: TOKENS.textSoft }}>Sin resultados</div>
+          ) : (
+            filtrados.map((p, i) => (
+              <div
+                key={p.id}
+                onMouseDown={(e) => { e.preventDefault(); elegir(p); }}
+                style={{
+                  padding: "9px 12px", fontSize: 13.5, cursor: "pointer",
+                  background: i === highlight ? TOKENS.cream : "transparent",
+                }}
+              >
+                {p.nombre}
+              </div>
+            ))
+          )}
+          {products.length > 40 && filtrados.length === 40 && (
+            <div style={{ padding: "7px 12px", fontSize: 11.5, color: TOKENS.textSoft, borderTop: `1px solid ${TOKENS.border}` }}>
+              Mostrando los primeros 40 resultados — seguí escribiendo para afinar la búsqueda.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PedidosTab({ vendor, products }) {
   const [fecha, setFecha] = useState(fechaHoy);
   const [categoria, setCategoria] = useState(db.CATEGORIAS[0]);
@@ -285,10 +367,11 @@ function PedidosTab({ vendor, products }) {
           </div>
           <div className="ec-field"><label>Cliente</label><input value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Nombre del cliente" /></div>
           <div className="ec-field"><label>Producto</label>
-            <select value={productoId} onChange={(e) => setProductoId(e.target.value)}>
-              {products.length === 0 && <option value="">Sin productos cargados</option>}
-              {products.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-            </select>
+            {products.length === 0 ? (
+              <input disabled value="Sin productos cargados" />
+            ) : (
+              <ProductPicker products={products} value={productoId} onChange={setProductoId} placeholder="Escribí para buscar un producto..." />
+            )}
           </div>
           <div className="ec-row2">
             <div className="ec-field"><label>Unidades</label><input type="number" min="1" value={unidades} onChange={(e) => setUnidades(e.target.value)} placeholder="0" /></div>
@@ -427,7 +510,7 @@ function StockTab({ vendor, products }) {
         <div className="ec-sub" style={{ marginBottom: 12 }}>Si en un envío te llegó algo de más, registralo acá. Cuando lo vendas, marcalo como "Vendido".</div>
         <div className="ec-field"><label>Fecha</label><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div>
         <div className="ec-field"><label>Producto</label>
-          <select value={productoId} onChange={(e) => setProductoId(e.target.value)}>{products.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select>
+          <ProductPicker products={products} value={productoId} onChange={setProductoId} placeholder="Escribí para buscar un producto..." />
         </div>
         <div className="ec-field"><label>Unidades</label><input type="number" min="1" value={unidades} onChange={(e) => setUnidades(e.target.value)} placeholder="0" /></div>
         <div className="ec-field"><label>Observación (opcional)</label><input value={observacion} onChange={(e) => setObservacion(e.target.value)} /></div>
@@ -613,8 +696,11 @@ function VendedoresAdmin({ vendors, refreshVendors }) {
 function ProductosAdmin({ products, refreshProducts }) {
   const [form, setForm] = useState({ nombre: "", precio_minorista: "", precio_mayorista: "", precio_granel: "", precio_comercios: "" });
   const [error, setError] = useState("");
+  const [ok, setOk] = useState("");
   const [editId, setEditId] = useState(null);
   const [editVals, setEditVals] = useState({});
+  const [filtro, setFiltro] = useState("");
+  const [uploading, setUploading] = useState(false);
 
   const agregar = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
@@ -627,58 +713,119 @@ function ProductosAdmin({ products, refreshProducts }) {
   const saveEdit = async () => { try { await db.updateProduct(editId, editVals); setEditId(null); refreshProducts(); } catch (err) { setError(err.message); } };
   const eliminar = async (id) => { try { await db.deleteProduct(id); refreshProducts(); } catch (err) { setError(err.message); } };
 
+  const manejarArchivo = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setError(""); setOk(""); setUploading(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf);
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+      const parseadas = rows.map((r) => ({
+        nombre: r.Nombre ?? r.nombre ?? r.Producto ?? r.producto ?? "",
+        minorista: r.Minorista ?? r.minorista ?? 0,
+        mayorista: r.Mayorista ?? r.mayorista ?? 0,
+        granel: r.Granel ?? r.granel ?? 0,
+        comercios: r.Comercios ?? r.comercios ?? 0,
+      })).filter((r) => r.nombre);
+      if (parseadas.length === 0) {
+        setError("El archivo no tiene filas con una columna Nombre (o Producto).");
+      } else {
+        const res = await db.bulkUpsertProducts(parseadas, products);
+        setOk(`Se guardaron ${res.guardados} producto(s).`);
+        refreshProducts();
+      }
+    } catch (err) { setError("No se pudo leer el archivo: " + err.message); }
+    setUploading(false);
+    e.target.value = "";
+  };
+
+  const filtrados = useMemo(() => {
+    const q = filtro.trim().toLowerCase();
+    const base = q ? products.filter((p) => p.nombre.toLowerCase().includes(q)) : products;
+    return base.slice(0, 100);
+  }, [filtro, products]);
+
   return (
-    <div className="ec-card">
-      <h3><Boxes size={16} /> Catálogo de productos</h3>
-      <div className="ec-sub" style={{ marginBottom: 12 }}>
-        Importante: el nombre tiene que quedar escrito EXACTAMENTE como figura en la planilla de cada vendedor (solapa "Datos - Activos"), porque así es como se va a guardar en la columna Producto.
-      </div>
-      <div onKeyDown={(e) => { if (e.key === "Enter") agregar(e); }} style={{ marginBottom: 16 }}>
-        <div className="ec-field"><label>Nombre del producto</label><input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></div>
-        <div className="ec-row2">
-          <div className="ec-field"><label>Precio Minorista</label><input type="number" value={form.precio_minorista} onChange={(e) => setForm({ ...form, precio_minorista: e.target.value })} /></div>
-          <div className="ec-field"><label>Precio Mayorista</label><input type="number" value={form.precio_mayorista} onChange={(e) => setForm({ ...form, precio_mayorista: e.target.value })} /></div>
+    <>
+      <div className="ec-card">
+        <h3><Upload size={16} /> Carga masiva desde Excel</h3>
+        <div className="ec-sub" style={{ marginBottom: 12 }}>
+          El archivo tiene que tener una columna <b>Nombre</b> (o <b>Producto</b>) y, opcionalmente,
+          <b> Minorista</b>, <b>Mayorista</b>, <b>Granel</b> y <b>Comercios</b> con los precios de cada uno.
+          Si el nombre ya existe (sin importar mayúsculas/minúsculas), actualiza sus precios; si es nuevo, lo agrega.
+          Ideal para cargar de una sola vez un catálogo grande.
         </div>
-        <div className="ec-row2">
-          <div className="ec-field"><label>Precio Granel</label><input type="number" value={form.precio_granel} onChange={(e) => setForm({ ...form, precio_granel: e.target.value })} /></div>
-          <div className="ec-field"><label>Precio Comercios</label><input type="number" value={form.precio_comercios} onChange={(e) => setForm({ ...form, precio_comercios: e.target.value })} /></div>
-        </div>
+        <label className="ec-btn ec-btn-primary" style={{ cursor: "pointer" }}>
+          <Upload size={15} /> {uploading ? "Cargando..." : "Elegir archivo Excel"}
+          <input type="file" accept=".xlsx,.xls" onChange={manejarArchivo} style={{ display: "none" }} disabled={uploading} />
+        </label>
         {error && <div className="ec-error">{error}</div>}
-        <button className="ec-btn ec-btn-primary" type="button" onClick={agregar}><Plus size={15} /> Agregar producto</button>
+        {ok && <div className="ec-ok">{ok}</div>}
       </div>
-      <div style={{ overflowX: "auto" }}>
-      <table className="ec-table">
-        <thead><tr><th>Producto</th><th>Minorista</th><th>Mayorista</th><th>Granel</th><th>Comercios</th><th></th></tr></thead>
-        <tbody>
-          {products.map((p) => editId === p.id ? (
-            <tr key={p.id}>
-              <td><input value={editVals.nombre} onChange={(e) => setEditVals({ ...editVals, nombre: e.target.value })} /></td>
-              <td><input type="number" style={{ width: 90 }} value={editVals.precio_minorista} onChange={(e) => setEditVals({ ...editVals, precio_minorista: Number(e.target.value) })} /></td>
-              <td><input type="number" style={{ width: 90 }} value={editVals.precio_mayorista} onChange={(e) => setEditVals({ ...editVals, precio_mayorista: Number(e.target.value) })} /></td>
-              <td><input type="number" style={{ width: 90 }} value={editVals.precio_granel} onChange={(e) => setEditVals({ ...editVals, precio_granel: Number(e.target.value) })} /></td>
-              <td><input type="number" style={{ width: 90 }} value={editVals.precio_comercios} onChange={(e) => setEditVals({ ...editVals, precio_comercios: Number(e.target.value) })} /></td>
-              <td className="ec-row-actions">
-                <button className="ec-btn ec-btn-primary" style={{ padding: "6px 9px" }} onClick={saveEdit}><Check size={13} /></button>
-                <button className="ec-btn ec-btn-ghost" style={{ padding: "6px 9px" }} onClick={() => setEditId(null)}><X size={13} /></button>
-              </td>
-            </tr>
-          ) : (
-            <tr key={p.id}>
-              <td>{p.nombre}</td><td>{fmtMoney(p.precio_minorista)}</td><td>{fmtMoney(p.precio_mayorista)}</td><td>{fmtMoney(p.precio_granel)}</td><td>{fmtMoney(p.precio_comercios)}</td>
-              <td className="ec-row-actions">
-                <button className="ec-btn ec-btn-ghost" style={{ padding: "6px 9px" }} onClick={() => startEdit(p)}>Editar</button>
-                <button className="ec-btn ec-btn-ghost" style={{ padding: "6px 9px", color: TOKENS.danger }} onClick={() => eliminar(p.id)}>Borrar</button>
-              </td>
-            </tr>
-          ))}
-          {products.length === 0 && <tr><td colSpan={6} className="ec-empty">Todavía no hay productos cargados.</td></tr>}
-        </tbody>
-      </table>
+
+      <div className="ec-card">
+        <h3><Boxes size={16} /> Catálogo de productos ({products.length})</h3>
+        <div className="ec-sub" style={{ marginBottom: 12 }}>
+          Importante: el nombre tiene que quedar escrito EXACTAMENTE como figura en la planilla de cada vendedor (solapa "Datos - Activos"), porque así es como se va a guardar en la columna Producto.
+        </div>
+        <div onKeyDown={(e) => { if (e.key === "Enter") agregar(e); }} style={{ marginBottom: 16 }}>
+          <div className="ec-field"><label>Nombre del producto</label><input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></div>
+          <div className="ec-row2">
+            <div className="ec-field"><label>Precio Minorista</label><input type="number" value={form.precio_minorista} onChange={(e) => setForm({ ...form, precio_minorista: e.target.value })} /></div>
+            <div className="ec-field"><label>Precio Mayorista</label><input type="number" value={form.precio_mayorista} onChange={(e) => setForm({ ...form, precio_mayorista: e.target.value })} /></div>
+          </div>
+          <div className="ec-row2">
+            <div className="ec-field"><label>Precio Granel</label><input type="number" value={form.precio_granel} onChange={(e) => setForm({ ...form, precio_granel: e.target.value })} /></div>
+            <div className="ec-field"><label>Precio Comercios</label><input type="number" value={form.precio_comercios} onChange={(e) => setForm({ ...form, precio_comercios: e.target.value })} /></div>
+          </div>
+          <button className="ec-btn ec-btn-primary" type="button" onClick={agregar}><Plus size={15} /> Agregar producto</button>
+        </div>
+
+        <div className="ec-field" style={{ maxWidth: 320 }}>
+          <label>Buscar en el catálogo</label>
+          <input value={filtro} onChange={(e) => setFiltro(e.target.value)} placeholder="Escribí para filtrar por nombre..." />
+        </div>
+
+        <div style={{ overflowX: "auto" }}>
+        <table className="ec-table">
+          <thead><tr><th>Producto</th><th>Minorista</th><th>Mayorista</th><th>Granel</th><th>Comercios</th><th></th></tr></thead>
+          <tbody>
+            {filtrados.map((p) => editId === p.id ? (
+              <tr key={p.id}>
+                <td><input value={editVals.nombre} onChange={(e) => setEditVals({ ...editVals, nombre: e.target.value })} /></td>
+                <td><input type="number" style={{ width: 90 }} value={editVals.precio_minorista} onChange={(e) => setEditVals({ ...editVals, precio_minorista: Number(e.target.value) })} /></td>
+                <td><input type="number" style={{ width: 90 }} value={editVals.precio_mayorista} onChange={(e) => setEditVals({ ...editVals, precio_mayorista: Number(e.target.value) })} /></td>
+                <td><input type="number" style={{ width: 90 }} value={editVals.precio_granel} onChange={(e) => setEditVals({ ...editVals, precio_granel: Number(e.target.value) })} /></td>
+                <td><input type="number" style={{ width: 90 }} value={editVals.precio_comercios} onChange={(e) => setEditVals({ ...editVals, precio_comercios: Number(e.target.value) })} /></td>
+                <td className="ec-row-actions">
+                  <button className="ec-btn ec-btn-primary" style={{ padding: "6px 9px" }} onClick={saveEdit}><Check size={13} /></button>
+                  <button className="ec-btn ec-btn-ghost" style={{ padding: "6px 9px" }} onClick={() => setEditId(null)}><X size={13} /></button>
+                </td>
+              </tr>
+            ) : (
+              <tr key={p.id}>
+                <td>{p.nombre}</td><td>{fmtMoney(p.precio_minorista)}</td><td>{fmtMoney(p.precio_mayorista)}</td><td>{fmtMoney(p.precio_granel)}</td><td>{fmtMoney(p.precio_comercios)}</td>
+                <td className="ec-row-actions">
+                  <button className="ec-btn ec-btn-ghost" style={{ padding: "6px 9px" }} onClick={() => startEdit(p)}>Editar</button>
+                  <button className="ec-btn ec-btn-ghost" style={{ padding: "6px 9px", color: TOKENS.danger }} onClick={() => eliminar(p.id)}>Borrar</button>
+                </td>
+              </tr>
+            ))}
+            {products.length === 0 && <tr><td colSpan={6} className="ec-empty">Todavía no hay productos cargados.</td></tr>}
+          </tbody>
+        </table>
+        {products.length > 100 && (
+          <div className="ec-sub" style={{ marginTop: 8 }}>
+            Mostrando {filtrados.length} de {products.length} productos — usá el buscador para encontrar uno puntual.
+          </div>
+        )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
-
 function ObjetivosAdmin({ vendors }) {
   const [mes, setMes] = useState(currentMonthKey());
   const [objetivos, setObjetivos] = useState(null);
