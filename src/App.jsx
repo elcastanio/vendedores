@@ -190,6 +190,8 @@ function VendorApp({ vendor, products, onLogout }) {
   const [tab, setTab] = useState("pedidos");
   const [pedidosMes, setPedidosMes] = useState(null);
   const [pedidosError, setPedidosError] = useState("");
+  const [rendiciones, setRendiciones] = useState(null);
+  const [rendicionesError, setRendicionesError] = useState("");
   const mesActualVendor = sheets.mesDeFecha(fechaHoy());
 
   const cargarPedidosMes = useCallback(async () => {
@@ -199,7 +201,15 @@ function VendorApp({ vendor, products, onLogout }) {
     catch (e) { setPedidosError(e.message); }
   }, [vendor.sheetUrl, mesActualVendor]);
 
+  const cargarRendiciones = useCallback(async () => {
+    if (!vendor.sheetUrl) return;
+    setRendicionesError("");
+    try { setRendiciones(await sheets.fetchRendicionesSheet(vendor.sheetUrl)); }
+    catch (e) { setRendicionesError(e.message); }
+  }, [vendor.sheetUrl]);
+
   useEffect(() => { cargarPedidosMes(); }, [cargarPedidosMes]);
+  useEffect(() => { cargarRendiciones(); }, [cargarRendiciones]);
 
   return (
     <div className="ec-shell">
@@ -216,7 +226,7 @@ function VendorApp({ vendor, products, onLogout }) {
         {tab === "pedidos" && <PedidosTab vendor={vendor} products={products} pedidos={pedidosMes} loadError={pedidosError} onChanged={cargarPedidosMes} />}
         {tab === "objetivo" && <ObjetivoTab vendor={vendor} pedidos={pedidosMes} loadError={pedidosError} />}
         {tab === "stock" && <StockTab vendor={vendor} products={products} />}
-        {tab === "rendiciones" && <RendicionesTab vendor={vendor} />}
+        {tab === "rendiciones" && <RendicionesTab vendor={vendor} rendiciones={rendiciones} error={rendicionesError} onChanged={cargarRendiciones} />}
       </div>
       <div className="ec-tabbar">
         <TabBtn active={tab === "pedidos"} onClick={() => setTab("pedidos")} icon={<ClipboardList size={17} />} label="Pedidos" />
@@ -711,18 +721,7 @@ function StockTab({ vendor, products }) {
   );
 }
 
-function RendicionesTab({ vendor }) {
-  const [rendiciones, setRendiciones] = useState(null);
-  const [error, setError] = useState("");
-
-  const cargar = useCallback(async () => {
-    if (!vendor.sheetUrl) return;
-    setError("");
-    try { setRendiciones(await sheets.fetchRendicionesSheet(vendor.sheetUrl)); }
-    catch (e) { setError(e.message); }
-  }, [vendor.sheetUrl]);
-  useEffect(() => { cargar(); }, [cargar]);
-
+function RendicionesTab({ vendor, rendiciones, error, onChanged }) {
   if (!vendor.sheetUrl) return null;
   if (error) return <div className="ec-error">{error}</div>;
   if (rendiciones === null) return <Spinner label="Cargando rendiciones..." />;
@@ -733,7 +732,7 @@ function RendicionesTab({ vendor }) {
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: TOKENS.textSoft }}>HISTORIAL DE RENDICIONES</span>
-        <button className="ec-btn ec-btn-ghost" style={{ padding: "5px 9px" }} onClick={cargar}><RefreshCw size={13} /></button>
+        <button className="ec-btn ec-btn-ghost" style={{ padding: "5px 9px" }} onClick={onChanged}><RefreshCw size={13} /></button>
       </div>
       {rendiciones.length === 0 ? (
         <div className="ec-empty">Todavía no hay rendiciones cargadas.</div>
