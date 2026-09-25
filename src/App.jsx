@@ -30,15 +30,15 @@ function GlobalStyle() {
       .ec-brand span { color: ${TOKENS.rust}; }
       .ec-sub { font-size: 12.5px; color: ${TOKENS.textSoft}; margin-top: 2px; }
       .ec-content { flex: 1; padding: 18px 18px 100px; overflow-y: auto; }
-      .ec-card { background: ${TOKENS.surface}; border: 1px solid ${TOKENS.border}; border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+      .ec-card { background: ${TOKENS.surface}; border: 1px solid ${TOKENS.border}; border-radius: 10px; padding: 16px; margin-bottom: 14px; overflow: hidden; }
       .ec-card h3 { margin: 0 0 12px; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-      .ec-field { margin-bottom: 12px; }
+      .ec-field { margin-bottom: 12px; max-width: 100%; }
       .ec-field label { display: block; font-size: 12.5px; color: ${TOKENS.textSoft}; margin-bottom: 5px; }
       .ec-field input, .ec-field select, .ec-field textarea {
         width: 100%; padding: 10px 11px; border: 1px solid ${TOKENS.border}; border-radius: 7px;
         font-size: 14.5px; font-family: inherit; background: #fff; color: ${TOKENS.text};
       }
-      .ec-field input[type="date"] { font-size: 13.5px; min-width: 0; }
+      .ec-field input[type="date"] { font-size: 13.5px; min-width: 0; width: 100%; max-width: 100%; box-sizing: border-box; display: block; }
       .ec-field input:disabled { background: ${TOKENS.cream}; color: ${TOKENS.textSoft}; }
       .ec-field input:focus, .ec-field select:focus, .ec-field textarea:focus { outline: 2px solid ${TOKENS.olive}; outline-offset: 1px; }
       .ec-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -315,9 +315,7 @@ function infoSemana(diaDelMes) {
 }
 
 function PedidosTab({ vendor, products }) {
-  const hoy = new Date();
-  const diasEnMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate();
-  const [dia, setDia] = useState(hoy.getDate());
+  const [fecha, setFecha] = useState(fechaHoy);
   const [categoria, setCategoria] = useState(db.CATEGORIAS[0]);
   const [cliente, setCliente] = useState("");
   const [productoId, setProductoId] = useState("");
@@ -329,7 +327,6 @@ function PedidosTab({ vendor, products }) {
   const [semanaAbierta, setSemanaAbierta] = useState(null);
 
   const mesActual = sheets.mesDeFecha(fechaHoy());
-  const fecha = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
   const productoSel = products.find((p) => p.id === productoId);
   const precio = db.precioProducto(productoSel, categoria);
   const total = precio * (Number(unidades) || 0);
@@ -587,10 +584,7 @@ function ObjetivoTab({ vendor }) {
 }
 
 function StockTab({ vendor, products }) {
-  const hoyStock = new Date();
-  const diasEnMesStock = new Date(hoyStock.getFullYear(), hoyStock.getMonth() + 1, 0).getDate();
-  const [dia, setDia] = useState(hoyStock.getDate());
-  const fecha = `${hoyStock.getFullYear()}-${String(hoyStock.getMonth() + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+  const [fecha, setFecha] = useState(fechaHoy);
   const [productoId, setProductoId] = useState("");
   const [unidades, setUnidades] = useState("");
   const [observacion, setObservacion] = useState("");
@@ -622,11 +616,7 @@ function StockTab({ vendor, products }) {
       <div className="ec-card">
         <h3><Package size={16} /> Registrar mercadería de más</h3>
         <div className="ec-sub" style={{ marginBottom: 12 }}>Si en un envío te llegó algo de más, registralo acá. Cuando lo vendas, marcalo como "Vendido".</div>
-        <div className="ec-field"><label>Día</label>
-          <select value={dia} onChange={(e) => setDia(Number(e.target.value))}>
-            {Array.from({ length: diasEnMesStock }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
-          </select>
-        </div>
+        <div className="ec-field"><label>Fecha</label><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div>
         <div className="ec-field"><label>Producto</label>
           <ProductPicker products={products} value={productoId} onChange={setProductoId} placeholder="Escribí para buscar un producto..." />
         </div>
