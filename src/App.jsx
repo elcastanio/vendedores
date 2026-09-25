@@ -38,6 +38,7 @@ function GlobalStyle() {
         width: 100%; padding: 10px 11px; border: 1px solid ${TOKENS.border}; border-radius: 7px;
         font-size: 14.5px; font-family: inherit; background: #fff; color: ${TOKENS.text};
       }
+      .ec-field input[type="date"] { font-size: 13.5px; min-width: 0; }
       .ec-field input:disabled { background: ${TOKENS.cream}; color: ${TOKENS.textSoft}; }
       .ec-field input:focus, .ec-field select:focus, .ec-field textarea:focus { outline: 2px solid ${TOKENS.olive}; outline-offset: 1px; }
       .ec-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -298,7 +299,7 @@ function PedidosTab({ vendor, products }) {
   const [fecha, setFecha] = useState(fechaHoy);
   const [categoria, setCategoria] = useState(db.CATEGORIAS[0]);
   const [cliente, setCliente] = useState("");
-  const [productoId, setProductoId] = useState(products[0]?.id || "");
+  const [productoId, setProductoId] = useState("");
   const [unidades, setUnidades] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -375,7 +376,7 @@ function PedidosTab({ vendor, products }) {
           </div>
           <div className="ec-row2">
             <div className="ec-field"><label>Unidades</label><input type="number" min="1" value={unidades} onChange={(e) => setUnidades(e.target.value)} placeholder="0" /></div>
-            <div className="ec-field"><label>Precio unitario ({categoria})</label><input value={fmtMoney(precio)} disabled /></div>
+            <div className="ec-field"><label>Precio</label><input value={fmtMoney(precio)} disabled /></div>
           </div>
           <div className="ec-summary-item" style={{ marginBottom: 12 }}><div className="label">TOTAL DE ESTA LÍNEA</div><div className="value">{fmtMoney(total)}</div></div>
           {error && <div className="ec-error">{error}</div>}
@@ -477,7 +478,7 @@ function ObjetivoTab({ vendor }) {
 
 function StockTab({ vendor, products }) {
   const [fecha, setFecha] = useState(fechaHoy);
-  const [productoId, setProductoId] = useState(products[0]?.id || "");
+  const [productoId, setProductoId] = useState("");
   const [unidades, setUnidades] = useState("");
   const [observacion, setObservacion] = useState("");
   const [saving, setSaving] = useState(false);
