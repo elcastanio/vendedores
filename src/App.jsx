@@ -315,7 +315,9 @@ function infoSemana(diaDelMes) {
 }
 
 function PedidosTab({ vendor, products }) {
-  const [fecha, setFecha] = useState(fechaHoy);
+  const hoy = new Date();
+  const diasEnMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate();
+  const [dia, setDia] = useState(hoy.getDate());
   const [categoria, setCategoria] = useState(db.CATEGORIAS[0]);
   const [cliente, setCliente] = useState("");
   const [productoId, setProductoId] = useState("");
@@ -327,6 +329,7 @@ function PedidosTab({ vendor, products }) {
   const [semanaAbierta, setSemanaAbierta] = useState(null);
 
   const mesActual = sheets.mesDeFecha(fechaHoy());
+  const fecha = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
   const productoSel = products.find((p) => p.id === productoId);
   const precio = db.precioProducto(productoSel, categoria);
   const total = precio * (Number(unidades) || 0);
@@ -393,7 +396,11 @@ function PedidosTab({ vendor, products }) {
       <div className="ec-card">
         <h3><ClipboardList size={16} /> Nuevo pedido — {mesActual}</h3>
         <div onKeyDown={(e) => { if (e.key === "Enter") submit(e); }}>
-          <div className="ec-field"><label>Fecha</label><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div>
+          <div className="ec-field"><label>Día del pedido</label>
+            <select value={dia} onChange={(e) => setDia(Number(e.target.value))}>
+              {Array.from({ length: diasEnMes }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d} de {mesActual}</option>)}
+            </select>
+          </div>
           <div className="ec-field"><label>Categoría</label>
             <select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
               {db.CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -580,7 +587,10 @@ function ObjetivoTab({ vendor }) {
 }
 
 function StockTab({ vendor, products }) {
-  const [fecha, setFecha] = useState(fechaHoy);
+  const hoyStock = new Date();
+  const diasEnMesStock = new Date(hoyStock.getFullYear(), hoyStock.getMonth() + 1, 0).getDate();
+  const [dia, setDia] = useState(hoyStock.getDate());
+  const fecha = `${hoyStock.getFullYear()}-${String(hoyStock.getMonth() + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
   const [productoId, setProductoId] = useState("");
   const [unidades, setUnidades] = useState("");
   const [observacion, setObservacion] = useState("");
@@ -612,7 +622,11 @@ function StockTab({ vendor, products }) {
       <div className="ec-card">
         <h3><Package size={16} /> Registrar mercadería de más</h3>
         <div className="ec-sub" style={{ marginBottom: 12 }}>Si en un envío te llegó algo de más, registralo acá. Cuando lo vendas, marcalo como "Vendido".</div>
-        <div className="ec-field"><label>Fecha</label><input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} /></div>
+        <div className="ec-field"><label>Día</label>
+          <select value={dia} onChange={(e) => setDia(Number(e.target.value))}>
+            {Array.from({ length: diasEnMesStock }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </div>
         <div className="ec-field"><label>Producto</label>
           <ProductPicker products={products} value={productoId} onChange={setProductoId} placeholder="Escribí para buscar un producto..." />
         </div>
