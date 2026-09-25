@@ -25,6 +25,9 @@ export default defineConfig({
         ],
       },
       workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           { urlPattern: ({ url }) => url.hostname.endsWith("supabase.co"), handler: "NetworkOnly" },
           { urlPattern: ({ url }) => url.hostname.endsWith("script.google.com"), handler: "NetworkOnly" },
