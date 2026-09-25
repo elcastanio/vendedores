@@ -11,6 +11,13 @@ export function mesDeFecha(fechaISO) {
   return MESES[d.getMonth()];
 }
 
+// A partir de un valor de <input type="month"> ("2026-10"), devuelve el
+// nombre de la solapa correspondiente ("Octubre").
+export function nombreMesDeValor(valorMes) {
+  const [, m] = valorMes.split("-");
+  return MESES[Number(m) - 1];
+}
+
 export function extraerSheetId(urlOId) {
   if (!urlOId) return "";
   const m = String(urlOId).match(/\/d\/([a-zA-Z0-9-_]+)/);
