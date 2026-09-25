@@ -223,7 +223,7 @@ function VendorApp({ vendor, products, onLogout }) {
             Todavía no tenés una planilla vinculada. Pedile al administrador que la cargue en tu ficha.
           </div></div>
         )}
-        {tab === "pedidos" && <PedidosTab vendor={vendor} products={products} pedidos={pedidosMes} loadError={pedidosError} onChanged={cargarPedidosMes} />}
+        {tab === "pedidos" && <PedidosTab vendor={vendor} products={products} pedidos={pedidosMes} loadError={pedidosError} onChanged={cargarPedidosMes} mesReal={mesActualVendor} />}
         {tab === "objetivo" && <ObjetivoTab vendor={vendor} pedidos={pedidosMes} loadError={pedidosError} />}
         {tab === "stock" && <StockTab vendor={vendor} products={products} />}
         {tab === "rendiciones" && <RendicionesTab vendor={vendor} rendiciones={rendiciones} error={rendicionesError} onChanged={cargarRendiciones} />}
@@ -355,9 +355,8 @@ function lunesDe(fecha) {
   d.setHours(0, 0, 0, 0);
   return d;
 }
-function infoSemana(diaDelMes) {
-  const hoy = new Date();
-  const fecha = new Date(hoy.getFullYear(), hoy.getMonth(), diaDelMes);
+function infoSemana(diaDelMes, referencia) {
+  const fecha = new Date(referencia.getFullYear(), referencia.getMonth(), diaDelMes);
   const lunes = lunesDe(fecha);
   const domingo = new Date(lunes);
   domingo.setDate(domingo.getDate() + 6);
@@ -365,7 +364,7 @@ function infoSemana(diaDelMes) {
   return { key: lunes.toISOString().slice(0, 10), label: `Semana del ${fmt(lunes)} al ${fmt(domingo)}` };
 }
 
-function PedidosTab({ vendor, products, pedidos, loadError, onChanged }) {
+function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal }) {
   const [fecha, setFecha] = useState(fechaHoy);
   const [categoria, setCategoria] = useState(db.CATEGORIAS[0]);
   const [cliente, setCliente] = useState("");
@@ -375,12 +374,32 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged }) {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
   const [semanaAbierta, setSemanaAbierta] = useState(null);
+  const [pedidosPropios, setPedidosPropios] = useState(null);
+  const [errorPropio, setErrorPropio] = useState("");
 
-  const mesActual = sheets.mesDeFecha(fechaHoy());
+  const mesActual = sheets.mesDeFecha(fecha);
+  const esMesReal = mesActual === mesReal;
   const productoSel = products.find((p) => p.id === productoId);
   const precio = db.precioProducto(productoSel, categoria);
   const totalLinea = precio * (Number(unidades) || 0);
   const totalCarrito = carrito.reduce((acc, l) => acc + l.total, 0);
+
+  // Si la fecha elegida cae en un mes distinto al actual (por ejemplo,
+  // probando con la planilla de un trimestre que todavía no arrancó, o
+  // cargando un pedido atrasado), pedimos esa solapa aparte en vez de
+  // reusar los datos del mes real que ya trajo la pantalla principal.
+  const cargarMesPropio = useCallback(async () => {
+    if (!vendor.sheetUrl || esMesReal) return;
+    setErrorPropio("");
+    try { setPedidosPropios(await sheets.fetchPedidosSheet(vendor.sheetUrl, mesActual)); }
+    catch (e) { setErrorPropio(e.message); }
+  }, [vendor.sheetUrl, mesActual, esMesReal]);
+
+  useEffect(() => { if (!esMesReal) cargarMesPropio(); }, [cargarMesPropio, esMesReal]);
+
+  const pedidosDelMes = esMesReal ? pedidos : pedidosPropios;
+  const errorDelMes = esMesReal ? loadError : errorPropio;
+  const refrescar = esMesReal ? onChanged : cargarMesPropio;
 
   const agregarAlCarrito = () => {
     setError("");
@@ -414,7 +433,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged }) {
       }
       setCliente("");
       setCarrito([]);
-      onChanged();
+      refrescar();
     } catch (err) {
       setError("No se pudo guardar el pedido: " + err.message);
     }
@@ -425,8 +444,9 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged }) {
   // Así, si dos clientes distintos comparten nombre pero se cargaron en
   // momentos distintos (con otras líneas en el medio), no quedan mezclados.
   const vista = useMemo(() => {
-    if (!pedidos) return null;
-    const ordenadas = [...pedidos].sort((a, b) => a.fila - b.fila);
+    if (!pedidosDelMes) return null;
+    const referencia = new Date(fecha + "T00:00:00");
+    const ordenadas = [...pedidosDelMes].sort((a, b) => a.fila - b.fila);
     const ordenes = [];
     let actual = null;
     ordenadas.forEach((p) => {
@@ -442,7 +462,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged }) {
     const completasPorSemana = new Map();
     ordenes.forEach((orden) => {
       const completa = orden.lineas.every((l) => l.despachado);
-      const { key, label } = infoSemana(orden.dia);
+      const { key, label } = infoSemana(orden.dia, referencia);
       const destino = completa ? completasPorSemana : pendientesPorSemana;
       if (!destino.has(key)) destino.set(key, { key, label, ordenes: [] });
       destino.get(key).ordenes.push(orden);
@@ -451,7 +471,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged }) {
     const gruposPendientes = Array.from(pendientesPorSemana.values()).sort((a, b) => a.key.localeCompare(b.key));
     const semanasCompletas = Array.from(completasPorSemana.values()).sort((a, b) => b.key.localeCompare(a.key));
     return { gruposPendientes, semanasCompletas };
-  }, [pedidos]);
+  }, [pedidosDelMes, fecha]);
 
   if (!vendor.sheetUrl) return null;
 
@@ -508,9 +528,9 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged }) {
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "18px 0 10px" }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: TOKENS.textSoft }}>PEDIDOS DE {mesActual.toUpperCase()}</span>
-        <button className="ec-btn ec-btn-ghost" style={{ padding: "5px 9px" }} onClick={onChanged}><RefreshCw size={13} /></button>
+        <button className="ec-btn ec-btn-ghost" style={{ padding: "5px 9px" }} onClick={refrescar}><RefreshCw size={13} /></button>
       </div>
-      {loadError && <div className="ec-error">{loadError}</div>}
+      {errorDelMes && <div className="ec-error">{errorDelMes}</div>}
       {vista === null ? <Spinner label="Cargando pedidos de la planilla..." /> : (vista.gruposPendientes.length === 0 && vista.semanasCompletas.length === 0) ? (
         <div className="ec-empty">Todavía no cargaste ningún pedido este mes.</div>
       ) : (
