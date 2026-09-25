@@ -567,7 +567,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal }
                               {g.lineas.map((l) => (
                                 <div key={l.fila}>
                                   <div className="ec-linea"><span>{l.producto} × {l.unidades} {l.despachado ? "✓" : ""}</span><span>{fmtMoney(l.total)}</span></div>
-                                  {l.faltante && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Faltante: {l.faltante}</div>}
+                                  {l.faltante && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Producto faltante: {l.producto}</div>}
                                 </div>
                               ))}
                               <div className="ec-subtotal"><span>Subtotal</span><span>{fmtMoney(subtotal)}</span></div>
@@ -610,7 +610,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal }
                           {g.lineas.map((l) => (
                             <div key={l.fila}>
                               <div className="ec-linea"><span>{l.producto} × {l.unidades}</span><span>{fmtMoney(l.total)}</span></div>
-                              {l.faltante && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Faltante: {l.faltante}</div>}
+                              {l.faltante && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Producto faltante: {l.producto}</div>}
                             </div>
                           ))}
                           <div className="ec-subtotal"><span>Subtotal</span><span>{fmtMoney(subtotal)}</span></div>
@@ -1195,6 +1195,8 @@ function PedidosAdmin({ vendors }) {
   const [mes, setMes] = useState(sheets.mesDeFecha(fechaHoy()));
   const [pedidos, setPedidos] = useState(null);
   const [error, setError] = useState("");
+  const [ok, setOk] = useState("");
+  const [preparando, setPreparando] = useState(false);
   const [editingRow, setEditingRow] = useState(null);
   const [editVals, setEditVals] = useState({});
 
@@ -1207,6 +1209,17 @@ function PedidosAdmin({ vendors }) {
     catch (e) { setError(e.message); setPedidos([]); }
   }, [vendor, mes]);
   useEffect(() => { cargar(); }, [cargar]);
+
+  const prepararColumnas = async () => {
+    if (!vendor || !vendor.sheetUrl) return;
+    setError(""); setOk(""); setPreparando(true);
+    try {
+      await sheets.prepararColumnasSheet(vendor.sheetUrl, mes);
+      setOk(`Listo — columnas Despachado/Faltante preparadas en ${mes} para ${vendor.nombre}.`);
+      cargar();
+    } catch (e) { setError("No se pudo preparar: " + e.message); }
+    setPreparando(false);
+  };
 
   const startEdit = (p) => { setEditingRow(p.fila); setEditVals({ despachado: p.despachado, faltante: p.faltante }); };
   const guardarFila = async (p) => {
@@ -1227,8 +1240,15 @@ function PedidosAdmin({ vendors }) {
           </select>
         </div>
       </div>
+      <div className="ec-sub" style={{ marginBottom: 10 }}>
+        Si es la primera vez que usás esta solapa, tocá esto una vez para darle formato y un desplegable a las columnas Despachado/Faltante.
+      </div>
+      <button className="ec-btn ec-btn-ghost" style={{ marginBottom: 14 }} disabled={preparando || !vendor?.sheetUrl} onClick={prepararColumnas}>
+        {preparando ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check size={15} />} Preparar columnas de esta solapa
+      </button>
       {vendor && !vendor.sheetUrl && <div className="ec-error">Este vendedor todavía no tiene planilla vinculada.</div>}
       {error && <div className="ec-error">{error}</div>}
+      {ok && <div className="ec-ok">{ok}</div>}
       {pedidos === null ? <Spinner label="Cargando..." /> : pedidos.length === 0 ? (
         <div className="ec-empty">No hay pedidos cargados en {mes} para este vendedor.</div>
       ) : (
@@ -1245,7 +1265,11 @@ function PedidosAdmin({ vendors }) {
                     <option value="no">Pendiente</option><option value="si">Despachado</option>
                   </select>
                 </div>
-                <div className="ec-field"><label>Faltante</label><input value={editVals.faltante} onChange={(e) => setEditVals({ ...editVals, faltante: e.target.value })} placeholder="Ej: faltaron 2 unidades" /></div>
+                <div className="ec-field"><label>¿Faltante?</label>
+                  <select className="ec-select-inline" value={editVals.faltante ? "si" : "no"} onChange={(e) => setEditVals({ ...editVals, faltante: e.target.value === "si" })}>
+                    <option value="no">No</option><option value="si">Sí</option>
+                  </select>
+                </div>
                 <div className="ec-row-actions">
                   <button className="ec-btn ec-btn-primary" onClick={() => guardarFila(p)}>Guardar</button>
                   <button className="ec-btn ec-btn-ghost" onClick={() => setEditingRow(null)}>Cancelar</button>
@@ -1253,7 +1277,7 @@ function PedidosAdmin({ vendors }) {
               </div>
             ) : (
               <>
-                {p.faltante && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Faltante: {p.faltante}</div>}
+                {p.faltante && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Producto faltante: {p.producto}</div>}
                 <button className="ec-btn ec-btn-ghost" style={{ marginTop: 8, padding: "6px 10px" }} onClick={() => startEdit(p)}>Editar estado <ChevronRight size={13} /></button>
               </>
             )}
