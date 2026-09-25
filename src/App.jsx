@@ -223,7 +223,7 @@ function VendorApp({ vendor, products, onLogout }) {
             Todavía no tenés una planilla vinculada. Pedile al administrador que la cargue en tu ficha.
           </div></div>
         )}
-        {tab === "pedidos" && <PedidosTab vendor={vendor} products={products} pedidos={pedidosMes} loadError={pedidosError} onChanged={cargarPedidosMes} mesReal={mesActualVendor} />}
+        {tab === "pedidos" && <PedidosTab vendor={vendor} products={products} pedidos={pedidosMes} loadError={pedidosError} onChanged={cargarPedidosMes} mesReal={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "objetivo" && <ObjetivoTab vendor={vendor} pedidos={pedidosMes} loadError={pedidosError} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "stock" && <StockTab vendor={vendor} products={products} />}
         {tab === "rendiciones" && <RendicionesTab vendor={vendor} rendiciones={rendiciones} error={rendicionesError} onChanged={cargarRendiciones} />}
@@ -364,7 +364,7 @@ function infoSemana(diaDelMes, referencia) {
   return { key: lunes.toISOString().slice(0, 10), label: `Semana del ${fmt(lunes)} al ${fmt(domingo)}` };
 }
 
-function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal }) {
+function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, mesRealClave }) {
   const [fecha, setFecha] = useState(fechaHoy);
   const [categoria, setCategoria] = useState(db.CATEGORIAS[0]);
   const [cliente, setCliente] = useState("");
@@ -374,32 +374,33 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal }
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
   const [semanaAbierta, setSemanaAbierta] = useState(null);
+  const [mesConsulta, setMesConsulta] = useState(mesRealClave);
   const [pedidosPropios, setPedidosPropios] = useState(null);
   const [errorPropio, setErrorPropio] = useState("");
 
-  const mesActual = sheets.mesDeFecha(fecha);
-  const esMesReal = mesActual === mesReal;
+  const mesActual = sheets.mesDeFecha(fecha); // mes al que se escribe el pedido nuevo
+  const mesVista = sheets.nombreMesDeValor(mesConsulta); // mes que se muestra en la lista de abajo
+  const esMesVistaReal = mesVista === mesReal;
   const productoSel = products.find((p) => p.id === productoId);
   const precio = db.precioProducto(productoSel, categoria);
   const totalLinea = precio * (Number(unidades) || 0);
   const totalCarrito = carrito.reduce((acc, l) => acc + l.total, 0);
 
-  // Si la fecha elegida cae en un mes distinto al actual (por ejemplo,
-  // probando con la planilla de un trimestre que todavía no arrancó, o
-  // cargando un pedido atrasado), pedimos esa solapa aparte en vez de
-  // reusar los datos del mes real que ya trajo la pantalla principal.
+  // Si el mes que se quiere VER es distinto al mes real (por ejemplo,
+  // querés revisar octubre estando parado en noviembre), pedimos esa
+  // solapa aparte en vez de reusar los datos del mes real ya cargados.
   const cargarMesPropio = useCallback(async () => {
-    if (!vendor.sheetUrl || esMesReal) return;
+    if (!vendor.sheetUrl || esMesVistaReal) return;
     setErrorPropio("");
-    try { setPedidosPropios(await sheets.fetchPedidosSheet(vendor.sheetUrl, mesActual)); }
+    try { setPedidosPropios(await sheets.fetchPedidosSheet(vendor.sheetUrl, mesVista)); }
     catch (e) { setErrorPropio(e.message); }
-  }, [vendor.sheetUrl, mesActual, esMesReal]);
+  }, [vendor.sheetUrl, mesVista, esMesVistaReal]);
 
-  useEffect(() => { if (!esMesReal) cargarMesPropio(); }, [cargarMesPropio, esMesReal]);
+  useEffect(() => { if (!esMesVistaReal) cargarMesPropio(); }, [cargarMesPropio, esMesVistaReal]);
 
-  const pedidosDelMes = esMesReal ? pedidos : pedidosPropios;
-  const errorDelMes = esMesReal ? loadError : errorPropio;
-  const refrescar = esMesReal ? onChanged : cargarMesPropio;
+  const pedidosDelMes = esMesVistaReal ? pedidos : pedidosPropios;
+  const errorDelMes = esMesVistaReal ? loadError : errorPropio;
+  const refrescar = esMesVistaReal ? onChanged : cargarMesPropio;
 
   const agregarAlCarrito = () => {
     setError("");
@@ -433,7 +434,8 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal }
       }
       setCliente("");
       setCarrito([]);
-      refrescar();
+      // Si el pedido se cargó en el mismo mes que se está viendo abajo, lo refrescamos.
+      if (mesActual === mesVista) refrescar();
     } catch (err) {
       setError("No se pudo guardar el pedido: " + err.message);
     }
@@ -445,7 +447,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal }
   // momentos distintos (con otras líneas en el medio), no quedan mezclados.
   const vista = useMemo(() => {
     if (!pedidosDelMes) return null;
-    const referencia = new Date(fecha + "T00:00:00");
+    const referencia = new Date(mesConsulta + "-01T00:00:00");
     const ordenadas = [...pedidosDelMes].sort((a, b) => a.fila - b.fila);
     const ordenes = [];
     let actual = null;
@@ -471,7 +473,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal }
     const gruposPendientes = Array.from(pendientesPorSemana.values()).sort((a, b) => a.key.localeCompare(b.key));
     const semanasCompletas = Array.from(completasPorSemana.values()).sort((a, b) => b.key.localeCompare(a.key));
     return { gruposPendientes, semanasCompletas };
-  }, [pedidosDelMes, fecha]);
+  }, [pedidosDelMes, mesConsulta]);
 
   if (!vendor.sheetUrl) return null;
 
@@ -526,13 +528,17 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal }
         </div>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "18px 0 10px" }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: TOKENS.textSoft }}>PEDIDOS DE {mesActual.toUpperCase()}</span>
-        <button className="ec-btn ec-btn-ghost" style={{ padding: "5px 9px" }} onClick={refrescar}><RefreshCw size={13} /></button>
+      <div className="ec-card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: TOKENS.textSoft }}>VER PEDIDOS DE</span>
+          <button className="ec-btn ec-btn-ghost" style={{ padding: "5px 9px" }} onClick={refrescar}><RefreshCw size={13} /></button>
+        </div>
+        <input type="month" value={mesConsulta} onChange={(e) => setMesConsulta(e.target.value)} style={{ width: "100%", padding: "10px 11px", border: `1px solid ${TOKENS.border}`, borderRadius: 7, fontSize: 14.5, fontFamily: "inherit", background: "#fff", color: TOKENS.text, boxSizing: "border-box" }} />
       </div>
+
       {errorDelMes && <div className="ec-error">{errorDelMes}</div>}
       {vista === null ? <Spinner label="Cargando pedidos de la planilla..." /> : (vista.gruposPendientes.length === 0 && vista.semanasCompletas.length === 0) ? (
-        <div className="ec-empty">Todavía no cargaste ningún pedido este mes.</div>
+        <div className="ec-empty">Todavía no hay pedidos cargados en {mesVista}.</div>
       ) : (
         <>
           {vista.gruposPendientes.length > 0 && (() => {
