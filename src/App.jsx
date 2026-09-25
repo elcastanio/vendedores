@@ -188,6 +188,19 @@ function LoginScreen({ vendors, onVendorLogin, onAdminLogin }) {
 
 function VendorApp({ vendor, products, onLogout }) {
   const [tab, setTab] = useState("pedidos");
+  const [pedidosMes, setPedidosMes] = useState(null);
+  const [pedidosError, setPedidosError] = useState("");
+  const mesActualVendor = sheets.mesDeFecha(fechaHoy());
+
+  const cargarPedidosMes = useCallback(async () => {
+    if (!vendor.sheetUrl) return;
+    setPedidosError("");
+    try { setPedidosMes(await sheets.fetchPedidosSheet(vendor.sheetUrl, mesActualVendor)); }
+    catch (e) { setPedidosError(e.message); }
+  }, [vendor.sheetUrl, mesActualVendor]);
+
+  useEffect(() => { cargarPedidosMes(); }, [cargarPedidosMes]);
+
   return (
     <div className="ec-shell">
       <div className="ec-topbar">
@@ -200,8 +213,8 @@ function VendorApp({ vendor, products, onLogout }) {
             Todavía no tenés una planilla vinculada. Pedile al administrador que la cargue en tu ficha.
           </div></div>
         )}
-        {tab === "pedidos" && <PedidosTab vendor={vendor} products={products} />}
-        {tab === "objetivo" && <ObjetivoTab vendor={vendor} />}
+        {tab === "pedidos" && <PedidosTab vendor={vendor} products={products} pedidos={pedidosMes} loadError={pedidosError} onChanged={cargarPedidosMes} />}
+        {tab === "objetivo" && <ObjetivoTab vendor={vendor} pedidos={pedidosMes} loadError={pedidosError} />}
         {tab === "stock" && <StockTab vendor={vendor} products={products} />}
         {tab === "rendiciones" && <RendicionesTab vendor={vendor} />}
       </div>
@@ -342,7 +355,7 @@ function infoSemana(diaDelMes) {
   return { key: lunes.toISOString().slice(0, 10), label: `Semana del ${fmt(lunes)} al ${fmt(domingo)}` };
 }
 
-function PedidosTab({ vendor, products }) {
+function PedidosTab({ vendor, products, pedidos, loadError, onChanged }) {
   const [fecha, setFecha] = useState(fechaHoy);
   const [categoria, setCategoria] = useState(db.CATEGORIAS[0]);
   const [cliente, setCliente] = useState("");
@@ -351,8 +364,6 @@ function PedidosTab({ vendor, products }) {
   const [carrito, setCarrito] = useState([]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
-  const [pedidos, setPedidos] = useState(null);
-  const [loadError, setLoadError] = useState("");
   const [semanaAbierta, setSemanaAbierta] = useState(null);
 
   const mesActual = sheets.mesDeFecha(fechaHoy());
@@ -360,15 +371,6 @@ function PedidosTab({ vendor, products }) {
   const precio = db.precioProducto(productoSel, categoria);
   const totalLinea = precio * (Number(unidades) || 0);
   const totalCarrito = carrito.reduce((acc, l) => acc + l.total, 0);
-
-  const cargar = useCallback(async () => {
-    if (!vendor.sheetUrl) return;
-    setLoadError("");
-    try { setPedidos(await sheets.fetchPedidosSheet(vendor.sheetUrl, mesActual)); }
-    catch (e) { setLoadError(e.message); }
-  }, [vendor.sheetUrl, mesActual]);
-
-  useEffect(() => { cargar(); }, [cargar]);
 
   const agregarAlCarrito = () => {
     setError("");
@@ -402,7 +404,7 @@ function PedidosTab({ vendor, products }) {
       }
       setCliente("");
       setCarrito([]);
-      cargar();
+      onChanged();
     } catch (err) {
       setError("No se pudo guardar el pedido: " + err.message);
     }
@@ -496,7 +498,7 @@ function PedidosTab({ vendor, products }) {
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "18px 0 10px" }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: TOKENS.textSoft }}>PEDIDOS DE {mesActual.toUpperCase()}</span>
-        <button className="ec-btn ec-btn-ghost" style={{ padding: "5px 9px" }} onClick={cargar}><RefreshCw size={13} /></button>
+        <button className="ec-btn ec-btn-ghost" style={{ padding: "5px 9px" }} onClick={onChanged}><RefreshCw size={13} /></button>
       </div>
       {loadError && <div className="ec-error">{loadError}</div>}
       {vista === null ? <Spinner label="Cargando pedidos de la planilla..." /> : (vista.gruposPendientes.length === 0 && vista.semanasCompletas.length === 0) ? (
@@ -596,27 +598,19 @@ function PedidosTab({ vendor, products }) {
   );
 }
 
-function ObjetivoTab({ vendor }) {
+function ObjetivoTab({ vendor, pedidos, loadError }) {
   const [objetivos, setObjetivos] = useState(null);
-  const [pedidos, setPedidos] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     (async () => {
-      try {
-        const mesActual = sheets.mesDeFecha(fechaHoy());
-        const [obj, ped] = await Promise.all([
-          db.fetchObjetivos(),
-          vendor.sheetUrl ? sheets.fetchPedidosSheet(vendor.sheetUrl, mesActual) : Promise.resolve([]),
-        ]);
-        setObjetivos(obj);
-        setPedidos(ped);
-      } catch (e) { setError(e.message); }
+      try { setObjetivos(await db.fetchObjetivos()); }
+      catch (e) { setError(e.message); }
     })();
-  }, [vendor.sheetUrl]);
+  }, []);
 
   if (objetivos === null || pedidos === null) return <Spinner label="Calculando objetivo..." />;
-  if (error) return <div className="ec-error">{error}</div>;
+  if (error || loadError) return <div className="ec-error">{error || loadError}</div>;
 
   const mesActual = currentMonthKey();
   const objetivoRow = objetivos.find((o) => o.vendor_id === vendor.id && o.mes === mesActual);
