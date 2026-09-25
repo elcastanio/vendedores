@@ -253,10 +253,32 @@ function FechaField({ label, value, onChange }) {
   return (
     <div className="ec-field">
       <label>{label}</label>
-      <div style={{ position: "relative" }}>
+      <div style={{ position: "relative", overflow: "hidden", borderRadius: 7 }}>
         <div className="ec-fecha-display">{texto}</div>
         <input
           type="date"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, border: "none", padding: 0, margin: 0 }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Igual que FechaField pero para elegir mes (<input type="month">), que en
+// el celu tiene el mismo problema de desborde que el de fecha.
+function MesField({ label, value, onChange }) {
+  const [anio, mesNum] = String(value).split("-");
+  const nombreMes = sheets.nombreMesDeValor(value);
+  const texto = nombreMes ? `${nombreMes} ${anio}` : "Elegir mes";
+  return (
+    <div className="ec-field">
+      {label && <label>{label}</label>}
+      <div style={{ position: "relative", overflow: "hidden", borderRadius: 7 }}>
+        <div className="ec-fecha-display">{texto}</div>
+        <input
+          type="month"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, border: "none", padding: 0, margin: 0 }}
@@ -533,7 +555,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
           <span style={{ fontSize: 13, fontWeight: 600, color: TOKENS.textSoft }}>VER PEDIDOS DE</span>
           <button className="ec-btn ec-btn-ghost" style={{ padding: "5px 9px" }} onClick={refrescar}><RefreshCw size={13} /></button>
         </div>
-        <input type="month" value={mesConsulta} onChange={(e) => setMesConsulta(e.target.value)} style={{ width: "100%", padding: "10px 11px", border: `1px solid ${TOKENS.border}`, borderRadius: 7, fontSize: 14.5, fontFamily: "inherit", background: "#fff", color: TOKENS.text, boxSizing: "border-box" }} />
+        <MesField value={mesConsulta} onChange={setMesConsulta} />
       </div>
 
       {errorDelMes && <div className="ec-error">{errorDelMes}</div>}
@@ -666,14 +688,14 @@ function ObjetivoTab({ vendor, pedidos, loadError, mesRealNombre, mesRealClave }
   if (objetivos === null || pedidosDelMes === null) return (
     <div className="ec-card">
       <h3><Target size={16} /> Objetivo</h3>
-      <div className="ec-field" style={{ maxWidth: 220 }}><label>Mes</label><input type="month" value={mesSel} onChange={(e) => setMesSel(e.target.value)} /></div>
+      <div style={{ maxWidth: 220 }}><MesField label="Mes" value={mesSel} onChange={setMesSel} /></div>
       <Spinner label="Calculando objetivo..." />
     </div>
   );
   if (error || errorDelMes) return (
     <div className="ec-card">
       <h3><Target size={16} /> Objetivo</h3>
-      <div className="ec-field" style={{ maxWidth: 220 }}><label>Mes</label><input type="month" value={mesSel} onChange={(e) => setMesSel(e.target.value)} /></div>
+      <div style={{ maxWidth: 220 }}><MesField label="Mes" value={mesSel} onChange={setMesSel} /></div>
       <div className="ec-error">{error || errorDelMes}</div>
     </div>
   );
@@ -696,7 +718,7 @@ function ObjetivoTab({ vendor, pedidos, loadError, mesRealNombre, mesRealClave }
   return (
     <div className="ec-card">
       <h3><Target size={16} /> Objetivo de {nombreSolapaSel}</h3>
-      <div className="ec-field" style={{ maxWidth: 220, marginBottom: 16 }}><label>Mes a consultar</label><input type="month" value={mesSel} onChange={(e) => setMesSel(e.target.value)} /></div>
+      <div style={{ maxWidth: 220, marginBottom: 16 }}><MesField label="Mes a consultar" value={mesSel} onChange={setMesSel} /></div>
       <div className="ec-big-num">{fmtMoney(totalVentas)}</div>
       <div className="ec-sub" style={{ marginBottom: 14 }}>vendido sobre una meta de {objetivo > 0 ? fmtMoney(objetivo) : "sin definir"}</div>
       <div className="ec-progress-track"><div className="ec-progress-fill" style={{ width: `${pct}%` }} /></div>
