@@ -3,10 +3,11 @@ import * as XLSX from "xlsx";
 import {
   ClipboardList, Target, Package, Wallet, LogOut, Plus, Check, X, Loader2,
   ShieldCheck, Users, Boxes, ListChecks, ChevronRight, AlertTriangle, Upload,
-  ExternalLink, RefreshCw,
+  ExternalLink, RefreshCw, Bell, BellOff,
 } from "lucide-react";
 import * as db from "./db";
 import * as sheets from "./sheetsClient";
+import { soportaPush, suscribirVendedor, yaEstaSuscripto, notificarDespacho } from "./push";
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "castano2026";
 
@@ -212,6 +213,8 @@ function VendorApp({ vendor, products, onLogout }) {
   const [rendicionesError, setRendicionesError] = useState("");
   const [stock, setStock] = useState(null);
   const [stockError, setStockError] = useState("");
+  const [suscripto, setSuscripto] = useState(null);
+  const [activando, setActivando] = useState(false);
   const mesActualVendor = sheets.mesDeFecha(fechaHoy());
 
   const cargarPedidosMes = useCallback(async () => {
@@ -238,6 +241,14 @@ function VendorApp({ vendor, products, onLogout }) {
   useEffect(() => { cargarPedidosMes(); }, [cargarPedidosMes]);
   useEffect(() => { cargarRendiciones(); }, [cargarRendiciones]);
   useEffect(() => { cargarStock(); }, [cargarStock]);
+  useEffect(() => { if (soportaPush()) yaEstaSuscripto().then(setSuscripto); else setSuscripto(false); }, []);
+
+  const activarNotificaciones = async () => {
+    setActivando(true);
+    try { await suscribirVendedor(vendor.id); setSuscripto(true); }
+    catch (e) { alert(e.message); }
+    setActivando(false);
+  };
 
   return (
     <div className="ec-shell">
@@ -246,6 +257,17 @@ function VendorApp({ vendor, products, onLogout }) {
         <button className="ec-btn ec-btn-ghost" onClick={onLogout}><LogOut size={14} /> Salir</button>
       </div>
       <div className="ec-content">
+        {suscripto === false && soportaPush() && (
+          <div className="ec-card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Bell size={18} style={{ color: TOKENS.rust, flexShrink: 0 }} />
+              <span style={{ fontSize: 13 }}>Activá los avisos para enterarte apenas se despache tu pedido de la semana.</span>
+            </div>
+            <button className="ec-btn ec-btn-primary" style={{ flexShrink: 0, padding: "8px 12px", fontSize: 13 }} disabled={activando} onClick={activarNotificaciones}>
+              {activando ? <Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> : "Activar"}
+            </button>
+          </div>
+        )}
         {!vendor.sheetUrl && (
           <div className="ec-card"><div className="ec-error" style={{ marginTop: 0 }}>
             Todavía no tenés una planilla vinculada. Pedile al administrador que la cargue en tu ficha.
@@ -1359,8 +1381,26 @@ function PedidosAdmin({ vendors }) {
 
   const startEdit = (p) => { setEditingRow(p.fila); setEditVals({ estado: p.estado, faltante: p.faltante }); };
   const guardarFila = async (p) => {
-    try { await sheets.updatePedidoSheet(vendor.sheetUrl, mes, p.fila, editVals); setEditingRow(null); cargar(); }
-    catch (e) { setError("No se pudo guardar: " + e.message); }
+    try {
+      const NOMBRES_MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+      const referencia = new Date(new Date().getFullYear(), NOMBRES_MESES.indexOf(mes), 1);
+      const semanaKey = infoSemana(p.dia, referencia).key;
+      const lineasAntes = (pedidos || []).filter((x) => infoSemana(x.dia, referencia).key === semanaKey);
+      const estabaCompleta = estadoAgregado(lineasAntes) === "DESPACHADO";
+
+      await sheets.updatePedidoSheet(vendor.sheetUrl, mes, p.fila, editVals);
+      setEditingRow(null);
+      const nuevos = await sheets.fetchPedidosSheet(vendor.sheetUrl, mes);
+      setPedidos(nuevos);
+
+      if (!estabaCompleta && editVals.estado === "DESPACHADO") {
+        const lineasAhora = nuevos.filter((x) => infoSemana(x.dia, referencia).key === semanaKey);
+        if (estadoAgregado(lineasAhora) === "DESPACHADO") {
+          const label = infoSemana(p.dia, referencia).label;
+          await notificarDespacho(vendor.id, `¡Se despachó tu pedido de la ${label.toLowerCase()}! ✅`);
+        }
+      }
+    } catch (e) { setError("No se pudo guardar: " + e.message); }
   };
 
   return (
