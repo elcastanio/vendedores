@@ -65,6 +65,7 @@ function GlobalStyle() {
       .ec-subtotal { display: flex; justify-content: space-between; font-size: 13.5px; font-weight: 600; padding-top: 6px; margin-top: 4px; border-top: 1px solid ${TOKENS.border}; }
       .ec-badge { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
       .ec-badge-pend { background: #F0E6CE; color: #8A6A21; }
+      .ec-badge-proceso { background: #E8D6C4; color: ${TOKENS.rustDark}; }
       .ec-badge-desp { background: #E1E8D2; color: ${TOKENS.oliveDark}; }
       .ec-badge-a { background: #E1E8D2; color: ${TOKENS.oliveDark}; }
       .ec-badge-b { background: #F0E6CE; color: #8A6A21; }
@@ -109,6 +110,16 @@ function Spinner({ label }) {
 
 function fmtMoney(n) {
   return "$" + Number(n || 0).toLocaleString("es-AR", { maximumFractionDigits: 0 });
+}
+function claseBadgeEstado(estado) {
+  if (estado === "DESPACHADO") return "ec-badge-desp";
+  if (estado === "EN PROCESO") return "ec-badge-proceso";
+  return "ec-badge-pend";
+}
+function etiquetaEstado(estado) {
+  if (estado === "DESPACHADO") return "Despachado";
+  if (estado === "EN PROCESO") return "En proceso";
+  return "Pendiente";
 }
 function currentMonthKey() {
   const d = new Date();
@@ -224,7 +235,7 @@ function VendorApp({ vendor, products, onLogout }) {
   return (
     <div className="ec-shell">
       <div className="ec-topbar">
-        <div><img src="/logo.png" alt="El Castaño" style={{ height: 22 }} /><div className="ec-sub" style={{ marginTop: 4 }}>{vendor.nombre}</div></div>
+        <div><img src="/logo.png" alt="El Castaño" style={{ height: 22 }} /><div className="ec-sub" style={{ marginTop: 4 }}>Hola, {vendor.nombre}</div></div>
         <button className="ec-btn ec-btn-ghost" onClick={onLogout}><LogOut size={14} /> Salir</button>
       </div>
       <div className="ec-content">
@@ -605,7 +616,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                               </div>
                               {g.lineas.map((l) => (
                                 <div key={l.fila}>
-                                  <div className="ec-linea"><span>{l.producto} × {l.unidades} {l.despachado ? "✓" : ""}</span><span>{fmtMoney(l.total)}</span></div>
+                                  <div className="ec-linea"><span>{l.producto} × {l.unidades} {l.estado === "DESPACHADO" ? "✓" : l.estado === "EN PROCESO" ? "⏳" : ""}</span><span>{fmtMoney(l.total)}</span></div>
                                   {l.faltante && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Producto faltante: {l.producto}</div>}
                                 </div>
                               ))}
@@ -716,32 +727,97 @@ function ObjetivoTab({ vendor, pedidos, loadError, mesRealNombre, mesRealClave }
 
   const porCategoria = {};
   db.CATEGORIAS.forEach((c) => (porCategoria[c] = 0));
-  let totalVentas = 0;
   pedidosDelMes.forEach((p) => {
     const t = Number(p.total || 0);
     porCategoria[p.categoria] = (porCategoria[p.categoria] || 0) + t;
-    totalVentas += t;
   });
-  const comisionGanada = totalVentas * (vendor.comision || 0);
-  const pct = objetivo > 0 ? Math.min(100, Math.round((totalVentas / objetivo) * 100)) : 0;
-  const restante = Math.max(0, objetivo - totalVentas);
+
+  // Minorista y Comercio se miden juntos contra el objetivo, con premio
+  // escalonado. Mayorista y Granel van juntos aparte, comisión fija.
+  const minoristaComercio = (porCategoria.Minorista || 0) + (porCategoria.Comercio || 0);
+  const mayoristaGranel = (porCategoria.Mayorista || 0) + (porCategoria.Granel || 0);
+  const totalVentas = minoristaComercio + mayoristaGranel;
+  const baseComision = vendor.comision || 0;
+
+  const comisionMayorista = mayoristaGranel * (mayoristaGranel <= 5000000 ? 0.05 : 0.06);
+
+  let comisionMinorista;
+  let escalon;
+  if (objetivo > 0) {
+    if (minoristaComercio < objetivo * 0.8) {
+      comisionMinorista = minoristaComercio * baseComision;
+      escalon = "base";
+    } else if (minoristaComercio < objetivo) {
+      comisionMinorista = minoristaComercio * baseComision + minoristaComercio * 0.035;
+      escalon = "80%";
+    } else if (minoristaComercio === objetivo) {
+      comisionMinorista = minoristaComercio * baseComision + minoristaComercio * 0.05;
+      escalon = "objetivo";
+    } else {
+      const exceso = minoristaComercio - objetivo;
+      comisionMinorista = minoristaComercio * baseComision + minoristaComercio * 0.05 + (0.05 * exceso * exceso) / objetivo;
+      escalon = "superado";
+    }
+  } else {
+    comisionMinorista = minoristaComercio * baseComision;
+    escalon = "sin objetivo";
+  }
+  const comisionTotal = comisionMinorista + comisionMayorista;
+
+  const pct = objetivo > 0 ? Math.min(100, Math.round((minoristaComercio / objetivo) * 100)) : 0;
+  const restante = Math.max(0, objetivo - minoristaComercio);
+  const primerNombre = (vendor.nombre || "").trim().split(" ")[0];
+
+  let mensajeMotivador = "";
+  if (objetivo > 0) {
+    if (escalon === "base") {
+      const proximoUmbral = objetivo * 0.8;
+      const falta = proximoUmbral - minoristaComercio;
+      const comisionProyectada = proximoUmbral * baseComision + proximoUmbral * 0.035;
+      const ganancia = comisionProyectada - comisionMinorista;
+      mensajeMotivador = `¡Vamos ${primerNombre}! Te faltan ${fmtMoney(falta)} en ventas para llegar al 80% del objetivo — ahí tu comisión sube a ${fmtMoney(comisionProyectada)} (+${fmtMoney(ganancia)}).`;
+    } else if (escalon === "80%") {
+      const falta = objetivo - minoristaComercio;
+      const comisionProyectada = objetivo * baseComision + objetivo * 0.05;
+      const ganancia = comisionProyectada - comisionMinorista;
+      mensajeMotivador = `¡Ya casi ${primerNombre}! Te faltan ${fmtMoney(falta)} para cumplir el objetivo — tu comisión pasaría a ${fmtMoney(comisionProyectada)} (+${fmtMoney(ganancia)}).`;
+    } else if (escalon === "objetivo") {
+      mensajeMotivador = `¡Objetivo cumplido, ${primerNombre}! De acá en más, cada peso extra que vendas suma premio creciente a tu comisión.`;
+    } else {
+      const exceso = minoristaComercio - objetivo;
+      mensajeMotivador = `¡Vas superando el objetivo por ${fmtMoney(exceso)}, ${primerNombre}! Seguí vendiendo — cada peso extra te suma más premio.`;
+    }
+  }
 
   return (
     <div className="ec-card">
       <h3><Target size={16} /> Objetivo de {nombreSolapaSel}</h3>
       <div style={{ maxWidth: 220, marginBottom: 16 }}><MesField label="Mes a consultar" value={mesSel} onChange={setMesSel} /></div>
-      <div className="ec-big-num">{fmtMoney(totalVentas)}</div>
-      <div className="ec-sub" style={{ marginBottom: 14 }}>vendido sobre una meta de {objetivo > 0 ? fmtMoney(objetivo) : "sin definir"}</div>
-      <div className="ec-progress-track"><div className="ec-progress-fill" style={{ width: `${pct}%` }} /></div>
-      <div className="ec-sub" style={{ marginTop: 8 }}>{objetivo > 0 ? `${pct}% cumplido · falta ${fmtMoney(restante)}` : "Todavía no te cargaron un objetivo para este mes"}</div>
-      <div className="ec-summary-grid">
+      {objetivo > 0 ? (
+        <>
+          <div className="ec-big-num">{fmtMoney(minoristaComercio)}</div>
+          <div className="ec-sub" style={{ marginBottom: 14 }}>vendido en Minorista + Comercio sobre una meta de {fmtMoney(objetivo)}</div>
+          <div className="ec-progress-track"><div className="ec-progress-fill" style={{ width: `${pct}%` }} /></div>
+          <div className="ec-sub" style={{ marginTop: 8 }}>
+            {pct}% cumplido{restante > 0 ? ` · falta ${fmtMoney(restante)}` : ""}
+          </div>
+          <div className="ec-note" style={{ marginTop: 10, background: TOKENS.cream, borderLeft: `3px solid ${TOKENS.olive}`, fontWeight: 500 }}>{mensajeMotivador}</div>
+        </>
+      ) : (
+        <div className="ec-empty" style={{ padding: "10px 0 4px" }}>Todavía no te cargaron un objetivo para este mes — cobrás tu comisión base sin escalones.</div>
+      )}
+      <div className="ec-summary-grid" style={{ marginTop: 14 }}>
         {db.CATEGORIAS.map((c) => (
           <div className="ec-summary-item" key={c}><div className="label">{c.toUpperCase()}</div><div className="value">{fmtMoney(porCategoria[c])}</div></div>
         ))}
       </div>
+      <div className="ec-summary-grid" style={{ marginTop: 10 }}>
+        <div className="ec-summary-item"><div className="label">COMISIÓN MINORISTA/COMERCIO</div><div className="value">{fmtMoney(comisionMinorista)}</div></div>
+        <div className="ec-summary-item"><div className="label">COMISIÓN MAYORISTA/GRANEL</div><div className="value">{fmtMoney(comisionMayorista)}</div></div>
+      </div>
       <div className="ec-summary-item" style={{ marginTop: 10 }}>
-        <div className="label">TU COMISIÓN DE {nombreSolapaSel.toUpperCase()} ({Math.round((vendor.comision || 0) * 100)}%)</div>
-        <div className="value">{fmtMoney(comisionGanada)}</div>
+        <div className="label">TU COMISIÓN TOTAL DE {nombreSolapaSel.toUpperCase()}</div>
+        <div className="value">{fmtMoney(comisionTotal)}</div>
       </div>
     </div>
   );
@@ -1264,7 +1340,7 @@ function PedidosAdmin({ vendors }) {
     setPreparando(false);
   };
 
-  const startEdit = (p) => { setEditingRow(p.fila); setEditVals({ despachado: p.despachado, faltante: p.faltante }); };
+  const startEdit = (p) => { setEditingRow(p.fila); setEditVals({ estado: p.estado, faltante: p.faltante }); };
   const guardarFila = async (p) => {
     try { await sheets.updatePedidoSheet(vendor.sheetUrl, mes, p.fila, editVals); setEditingRow(null); cargar(); }
     catch (e) { setError("No se pudo guardar: " + e.message); }
@@ -1299,13 +1375,15 @@ function PedidosAdmin({ vendors }) {
           <div className="ec-pedido-row" key={p.fila}>
             <div className="ec-pedido-top">
               <div><div className="ec-pedido-cliente">{p.cliente}</div><div className="ec-pedido-meta">{p.producto} · {p.unidades} u. · {p.categoria} · Día {p.dia} · {fmtMoney(p.total)}</div></div>
-              {editingRow !== p.fila && <span className={`ec-badge ${p.despachado ? "ec-badge-desp" : "ec-badge-pend"}`}>{p.despachado ? "Despachado" : "Pendiente"}</span>}
+              {editingRow !== p.fila && <span className={`ec-badge ${claseBadgeEstado(p.estado)}`}>{etiquetaEstado(p.estado)}</span>}
             </div>
             {editingRow === p.fila ? (
               <div style={{ marginTop: 10 }}>
                 <div className="ec-field"><label>Estado</label>
-                  <select className="ec-select-inline" value={editVals.despachado ? "si" : "no"} onChange={(e) => setEditVals({ ...editVals, despachado: e.target.value === "si" })}>
-                    <option value="no">Pendiente</option><option value="si">Despachado</option>
+                  <select className="ec-select-inline" value={editVals.estado} onChange={(e) => setEditVals({ ...editVals, estado: e.target.value })}>
+                    <option value="PENDIENTE">Pendiente</option>
+                    <option value="EN PROCESO">En proceso</option>
+                    <option value="DESPACHADO">Despachado</option>
                   </select>
                 </div>
                 <div className="ec-field"><label>¿Faltante?</label>
