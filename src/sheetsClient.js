@@ -83,9 +83,9 @@ export async function updateStockEstadoSheet(sheetUrl, fila, estado) {
   return llamar("updateStockEstado", { sheetId, fila, estado });
 }
 
-// Lee el objetivo (y la comisión, si querés usarla) de un vendedor para un
-// mes puntual, directo de la solapa "Comision y objetivos" de su planilla.
-export async function fetchObjetivoDesdeSheet(sheetUrl, vendorNombre, mes) {
+// Lee el objetivo de un mes puntual, directo de la solapa "Panel de
+// control" de la propia planilla del vendedor.
+export async function fetchObjetivoDesdeSheet(sheetUrl, mes) {
   const sheetId = extraerSheetId(sheetUrl);
-  return llamar("fetchObjetivoSheet", { sheetId, vendorNombre, mes });
+  return llamar("fetchObjetivoSheet", { sheetId, mes });
 }
