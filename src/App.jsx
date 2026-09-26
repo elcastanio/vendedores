@@ -121,6 +121,13 @@ function etiquetaEstado(estado) {
   if (estado === "EN PROCESO") return "En proceso";
   return "Pendiente";
 }
+// Para un grupo de líneas (un pedido, o todos los pendientes juntos):
+// si alguna está "en proceso", mostramos ese estado; si no, Pendiente.
+function estadoAgregado(lineas) {
+  if (lineas.every((l) => l.estado === "DESPACHADO")) return "DESPACHADO";
+  if (lineas.some((l) => l.estado === "EN PROCESO")) return "EN PROCESO";
+  return "PENDIENTE";
+}
 function currentMonthKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -598,7 +605,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                     <div className="ec-pedido-meta">{todasOrdenes.length} pedido(s) sin despachar · {fmtMoney(total)}</div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span className="ec-badge ec-badge-pend">Pendiente</span>
+                    <span className={`ec-badge ${claseBadgeEstado(estadoAgregado(todasLineas))}`}>{etiquetaEstado(estadoAgregado(todasLineas))}</span>
                     <ChevronRight size={16} style={{ transform: abierta ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
                   </div>
                 </div>
@@ -613,6 +620,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                             <div key={i} style={{ marginBottom: 10 }}>
                               <div className="ec-pedido-top">
                                 <div><div className="ec-pedido-cliente">{g.cliente}</div><div className="ec-pedido-meta">Día {g.dia} · {g.categoria}</div></div>
+                                <span className={`ec-badge ${claseBadgeEstado(estadoAgregado(g.lineas))}`}>{etiquetaEstado(estadoAgregado(g.lineas))}</span>
                               </div>
                               {g.lineas.map((l) => (
                                 <div key={l.fila}>
@@ -679,21 +687,24 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
 }
 
 function ObjetivoTab({ vendor, pedidos, loadError, mesRealNombre, mesRealClave }) {
-  const [objetivos, setObjetivos] = useState(null);
+  const [objetivoInfo, setObjetivoInfo] = useState(null);
   const [error, setError] = useState("");
   const [mesSel, setMesSel] = useState(mesRealClave);
   const [pedidosPropios, setPedidosPropios] = useState(null);
   const [errorPropio, setErrorPropio] = useState("");
 
+  const nombreSolapaSel = sheets.nombreMesDeValor(mesSel);
+  const esMesReal = nombreSolapaSel === mesRealNombre;
+
   useEffect(() => {
+    if (!vendor.sheetUrl) return;
+    setObjetivoInfo(null);
+    setError("");
     (async () => {
-      try { setObjetivos(await db.fetchObjetivos()); }
+      try { setObjetivoInfo(await sheets.fetchObjetivoDesdeSheet(vendor.sheetUrl, vendor.nombre, nombreSolapaSel)); }
       catch (e) { setError(e.message); }
     })();
-  }, []);
-
-  const nombreSolapaSel = sheets.nombreMesDeValor(mesSel);
-  const esMesReal = mesSel === mesRealClave;
+  }, [vendor.sheetUrl, vendor.nombre, nombreSolapaSel]);
 
   const cargarMesPropio = useCallback(async () => {
     if (!vendor.sheetUrl || esMesReal) return;
@@ -707,7 +718,7 @@ function ObjetivoTab({ vendor, pedidos, loadError, mesRealNombre, mesRealClave }
   const pedidosDelMes = esMesReal ? pedidos : pedidosPropios;
   const errorDelMes = esMesReal ? loadError : errorPropio;
 
-  if (objetivos === null || pedidosDelMes === null) return (
+  if (objetivoInfo === null || pedidosDelMes === null) return (
     <div className="ec-card">
       <h3><Target size={16} /> Objetivo</h3>
       <div style={{ maxWidth: 220 }}><MesField label="Mes" value={mesSel} onChange={setMesSel} /></div>
@@ -721,9 +732,15 @@ function ObjetivoTab({ vendor, pedidos, loadError, mesRealNombre, mesRealClave }
       <div className="ec-error">{error || errorDelMes}</div>
     </div>
   );
+  if (!objetivoInfo.encontrado) return (
+    <div className="ec-card">
+      <h3><Target size={16} /> Objetivo</h3>
+      <div style={{ maxWidth: 220, marginBottom: 12 }}><MesField label="Mes" value={mesSel} onChange={setMesSel} /></div>
+      <div className="ec-error">No te encontré en la solapa "Comision y objetivos" de tu planilla (revisá que tu nombre coincida exacto). Avisale al administrador.</div>
+    </div>
+  );
 
-  const objetivoRow = objetivos.find((o) => o.vendor_id === vendor.id && o.mes === mesSel);
-  const objetivo = Number(objetivoRow?.objetivo || 0);
+  const objetivo = Number(objetivoInfo.objetivo || 0);
 
   const porCategoria = {};
   db.CATEGORIAS.forEach((c) => (porCategoria[c] = 0));
