@@ -701,7 +701,7 @@ function ObjetivoTab({ vendor, pedidos, loadError, mesRealNombre, mesRealClave }
     setObjetivoInfo(null);
     setError("");
     (async () => {
-      try { setObjetivoInfo(await sheets.fetchObjetivoDesdeSheet(vendor.sheetUrl, vendor.nombre, nombreSolapaSel)); }
+      try { setObjetivoInfo(await sheets.fetchObjetivoDesdeSheet(vendor.sheetUrl, nombreSolapaSel)); }
       catch (e) { setError(e.message); }
     })();
   }, [vendor.sheetUrl, vendor.nombre, nombreSolapaSel]);
@@ -736,7 +736,7 @@ function ObjetivoTab({ vendor, pedidos, loadError, mesRealNombre, mesRealClave }
     <div className="ec-card">
       <h3><Target size={16} /> Objetivo</h3>
       <div style={{ maxWidth: 220, marginBottom: 12 }}><MesField label="Mes" value={mesSel} onChange={setMesSel} /></div>
-      <div className="ec-error">No te encontré en la solapa "Comision y objetivos" de tu planilla (revisá que tu nombre coincida exacto). Avisale al administrador.</div>
+      <div className="ec-error">No pude encontrar el objetivo de {nombreSolapaSel} en el "Resumen del trimestre" de tu Panel de control. Avisale al administrador para que revise esa solapa.</div>
     </div>
   );
 
