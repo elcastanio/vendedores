@@ -12,6 +12,7 @@ export default async function handler(req, res) {
     if (error) throw error;
     res.status(200).json({ ok: true });
   } catch (err) {
+    console.error("Error en save-subscription:", err);
     res.status(500).json({ error: String(err.message || err) });
   }
 }
