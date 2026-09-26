@@ -125,8 +125,8 @@ function etiquetaEstado(estado) {
 // si alguna está "en proceso", mostramos ese estado; si no, Pendiente.
 function estadoAgregado(lineas) {
   if (lineas.every((l) => l.estado === "DESPACHADO")) return "DESPACHADO";
-  if (lineas.some((l) => l.estado === "EN PROCESO")) return "EN PROCESO";
-  return "PENDIENTE";
+  if (lineas.some((l) => l.estado === "PENDIENTE")) return "PENDIENTE";
+  return "EN PROCESO";
 }
 function currentMonthKey() {
   const d = new Date();
