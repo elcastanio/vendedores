@@ -6,6 +6,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.js",
       registerType: "autoUpdate",
       includeAssets: ["apple-touch-icon.png"],
       manifest: {
@@ -24,14 +27,8 @@ export default defineConfig({
           { src: "icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
-      workbox: {
-        skipWaiting: true,
-        clientsClaim: true,
-        cleanupOutdatedCaches: true,
-        runtimeCaching: [
-          { urlPattern: ({ url }) => url.hostname.endsWith("supabase.co"), handler: "NetworkOnly" },
-          { urlPattern: ({ url }) => url.hostname.endsWith("script.google.com"), handler: "NetworkOnly" },
-        ],
+      injectManifest: {
+        injectionPoint: "self.__WB_MANIFEST",
       },
     }),
   ],
