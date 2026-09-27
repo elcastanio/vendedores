@@ -4,8 +4,20 @@ import webpush from "web-push";
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Método no permitido" });
   try {
-    const { vendorId, mensaje } = req.body;
-    if (!vendorId) return res.status(400).json({ error: "Falta vendorId" });
+    const { vendorId, sheetId, mensaje } = req.body;
+
+    const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY);
+
+    // Si viene el sheetId (por ejemplo, disparado desde la propia planilla)
+    // en vez del vendorId, buscamos a qué vendedor corresponde esa planilla.
+    let vendorIdFinal = vendorId;
+    if (!vendorIdFinal && sheetId) {
+      const { data: vendorRows, error: vendorError } = await supabase.from("vendors").select("id, sheet_url");
+      if (vendorError) throw vendorError;
+      const match = (vendorRows || []).find((v) => (v.sheet_url || "").includes(sheetId));
+      if (match) vendorIdFinal = match.id;
+    }
+    if (!vendorIdFinal) return res.status(400).json({ error: "No se pudo identificar al vendedor (faltan vendorId y sheetId, o no hay ninguna planilla que coincida)." });
 
     webpush.setVapidDetails(
       "mailto:admin@elcastanio.com.ar",
@@ -13,8 +25,7 @@ export default async function handler(req, res) {
       process.env.VAPID_PRIVATE_KEY
     );
 
-    const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY);
-    const { data, error } = await supabase.from("push_subscriptions").select("*").eq("vendor_id", vendorId);
+    const { data, error } = await supabase.from("push_subscriptions").select("*").eq("vendor_id", vendorIdFinal);
     if (error) throw error;
 
     const payload = JSON.stringify({
@@ -36,6 +47,7 @@ export default async function handler(req, res) {
 
     res.status(200).json({ ok: true, enviados: resultados.filter((r) => r.status === "fulfilled").length });
   } catch (err) {
+    console.error("Error en notify-dispatch:", err);
     res.status(500).json({ error: String(err.message || err) });
   }
 }
