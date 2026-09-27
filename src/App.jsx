@@ -1355,10 +1355,15 @@ function PedidosAdmin({ vendors }) {
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
   const [preparando, setPreparando] = useState(false);
+  const [instalando, setInstalando] = useState(false);
+  const [despachandoSemana, setDespachandoSemana] = useState(null);
   const [editingRow, setEditingRow] = useState(null);
   const [editVals, setEditVals] = useState({});
+  const [semanaAbierta, setSemanaAbierta] = useState(null);
 
   const vendor = vendors.find((v) => v.id === vendorId);
+  const NOMBRES_MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  const referencia = new Date(new Date().getFullYear(), NOMBRES_MESES.indexOf(mes), 1);
 
   const cargar = useCallback(async () => {
     if (!vendor || !vendor.sheetUrl) { setPedidos([]); return; }
@@ -1367,6 +1372,17 @@ function PedidosAdmin({ vendors }) {
     catch (e) { setError(e.message); setPedidos([]); }
   }, [vendor, mes]);
   useEffect(() => { cargar(); }, [cargar]);
+
+  const semanas = useMemo(() => {
+    if (!pedidos) return null;
+    const mapa = new Map();
+    pedidos.forEach((p) => {
+      const { key, label } = infoSemana(p.dia, referencia);
+      if (!mapa.has(key)) mapa.set(key, { key, label, lineas: [] });
+      mapa.get(key).lineas.push(p);
+    });
+    return Array.from(mapa.values()).sort((a, b) => b.key.localeCompare(a.key));
+  }, [pedidos, mes]);
 
   const prepararColumnas = async () => {
     if (!vendor || !vendor.sheetUrl) return;
@@ -1379,11 +1395,19 @@ function PedidosAdmin({ vendors }) {
     setPreparando(false);
   };
 
+  const instalarAviso = async () => {
+    if (!vendor || !vendor.sheetUrl) return;
+    setError(""); setOk(""); setInstalando(true);
+    try {
+      const res = await sheets.instalarDisparadorSheet(vendor.sheetUrl);
+      setOk(res.yaInstalado ? "Ese aviso ya estaba instalado en esta planilla." : `Listo — a partir de ahora, marcar Despachado directo en la planilla de ${vendor.nombre} también avisa solo.`);
+    } catch (e) { setError("No se pudo instalar: " + e.message); }
+    setInstalando(false);
+  };
+
   const startEdit = (p) => { setEditingRow(p.fila); setEditVals({ estado: p.estado, faltante: p.faltante }); };
   const guardarFila = async (p) => {
     try {
-      const NOMBRES_MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-      const referencia = new Date(new Date().getFullYear(), NOMBRES_MESES.indexOf(mes), 1);
       const semanaKey = infoSemana(p.dia, referencia).key;
       const lineasAntes = (pedidos || []).filter((x) => infoSemana(x.dia, referencia).key === semanaKey);
       const estabaCompleta = estadoAgregado(lineasAntes) === "DESPACHADO";
@@ -1403,6 +1427,22 @@ function PedidosAdmin({ vendors }) {
     } catch (e) { setError("No se pudo guardar: " + e.message); }
   };
 
+  const despacharSemana = async (semana) => {
+    setError(""); setDespachandoSemana(semana.key);
+    try {
+      const pendientes = semana.lineas.filter((l) => l.estado !== "DESPACHADO");
+      for (const linea of pendientes) {
+        await sheets.updatePedidoSheet(vendor.sheetUrl, mes, linea.fila, { estado: "DESPACHADO" });
+      }
+      const nuevos = await sheets.fetchPedidosSheet(vendor.sheetUrl, mes);
+      setPedidos(nuevos);
+      if (pendientes.length > 0) {
+        await notificarDespacho(vendor.id, `¡Se despachó tu pedido de la ${semana.label.toLowerCase()}! ✅`);
+      }
+    } catch (e) { setError("No se pudo despachar la semana: " + e.message); }
+    setDespachandoSemana(null);
+  };
+
   return (
     <div className="ec-card">
       <h3><ListChecks size={16} /> Pedidos por vendedor</h3>
@@ -1412,60 +1452,94 @@ function PedidosAdmin({ vendors }) {
         </div>
         <div className="ec-field"><label>Mes</label>
           <select value={mes} onChange={(e) => setMes(e.target.value)}>
-            {["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"].map((m) => <option key={m} value={m}>{m}</option>)}
+            {NOMBRES_MESES.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
       </div>
-      <div className="ec-sub" style={{ marginBottom: 10 }}>
-        Si es la primera vez que usás esta solapa, tocá esto una vez para darle formato y un desplegable a las columnas Despachado/Faltante.
+      <div className="ec-row-actions" style={{ marginBottom: 10, flexWrap: "wrap" }}>
+        <button className="ec-btn ec-btn-ghost" disabled={preparando || !vendor?.sheetUrl} onClick={prepararColumnas}>
+          {preparando ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check size={15} />} Preparar columnas de esta solapa
+        </button>
+        <button className="ec-btn ec-btn-ghost" disabled={instalando || !vendor?.sheetUrl} onClick={instalarAviso}>
+          {instalando ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <Bell size={15} />} Instalar aviso automático en esta planilla
+        </button>
       </div>
-      <button className="ec-btn ec-btn-ghost" style={{ marginBottom: 14 }} disabled={preparando || !vendor?.sheetUrl} onClick={prepararColumnas}>
-        {preparando ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check size={15} />} Preparar columnas de esta solapa
-      </button>
       {vendor && !vendor.sheetUrl && <div className="ec-error">Este vendedor todavía no tiene planilla vinculada.</div>}
       {error && <div className="ec-error">{error}</div>}
       {ok && <div className="ec-ok">{ok}</div>}
-      {pedidos === null ? <Spinner label="Cargando..." /> : pedidos.length === 0 ? (
+      {semanas === null ? <Spinner label="Cargando..." /> : semanas.length === 0 ? (
         <div className="ec-empty">No hay pedidos cargados en {mes} para este vendedor.</div>
       ) : (
-        pedidos.map((p) => (
-          <div className="ec-pedido-row" key={p.fila}>
-            <div className="ec-pedido-top">
-              <div><div className="ec-pedido-cliente">{p.cliente}</div><div className="ec-pedido-meta">{p.producto} · {p.unidades} u. · {p.categoria} · Día {p.dia} · {fmtMoney(p.total)}</div></div>
-              {editingRow !== p.fila && <span className={`ec-badge ${claseBadgeEstado(p.estado)}`}>{etiquetaEstado(p.estado)}</span>}
-            </div>
-            {editingRow === p.fila ? (
-              <div style={{ marginTop: 10 }}>
-                <div className="ec-field"><label>Estado</label>
-                  <select className="ec-select-inline" value={editVals.estado} onChange={(e) => setEditVals({ ...editVals, estado: e.target.value })}>
-                    <option value="PENDIENTE">Pendiente</option>
-                    <option value="EN PROCESO">En proceso</option>
-                    <option value="DESPACHADO">Despachado</option>
-                  </select>
+        semanas.map((sem) => {
+          const total = sem.lineas.reduce((acc, l) => acc + Number(l.total || 0), 0);
+          const estado = estadoAgregado(sem.lineas);
+          const abierta = semanaAbierta === sem.key;
+          return (
+            <div className="ec-pedido-row" key={sem.key}>
+              <div className="ec-pedido-top" style={{ cursor: "pointer" }} onClick={() => setSemanaAbierta(abierta ? null : sem.key)}>
+                <div>
+                  <div className="ec-pedido-cliente">{sem.label}</div>
+                  <div className="ec-pedido-meta">{sem.lineas.length} línea(s) · {fmtMoney(total)}</div>
                 </div>
-                <div className="ec-field"><label>¿Faltante?</label>
-                  <select className="ec-select-inline" value={editVals.faltante ? "si" : "no"} onChange={(e) => setEditVals({ ...editVals, faltante: e.target.value === "si" })}>
-                    <option value="no">No</option><option value="si">Sí</option>
-                  </select>
-                </div>
-                <div className="ec-row-actions">
-                  <button className="ec-btn ec-btn-primary" onClick={() => guardarFila(p)}>Guardar</button>
-                  <button className="ec-btn ec-btn-ghost" onClick={() => setEditingRow(null)}>Cancelar</button>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className={`ec-badge ${claseBadgeEstado(estado)}`}>{etiquetaEstado(estado)}</span>
+                  <ChevronRight size={16} style={{ transform: abierta ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
                 </div>
               </div>
-            ) : (
-              <>
-                {p.faltante && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Producto faltante: {p.producto}</div>}
-                <button className="ec-btn ec-btn-ghost" style={{ marginTop: 8, padding: "6px 10px" }} onClick={() => startEdit(p)}>Editar estado <ChevronRight size={13} /></button>
-              </>
-            )}
-          </div>
-        ))
+              {estado !== "DESPACHADO" && (
+                <button
+                  className="ec-btn ec-btn-primary"
+                  style={{ marginTop: 10 }}
+                  disabled={despachandoSemana === sem.key}
+                  onClick={(e) => { e.stopPropagation(); despacharSemana(sem); }}
+                >
+                  {despachandoSemana === sem.key ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check size={15} />} Despachar toda la semana
+                </button>
+              )}
+              {abierta && (
+                <div style={{ marginTop: 10, borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8 }}>
+                  {sem.lineas.map((p) => (
+                    <div key={p.fila} style={{ marginBottom: 10 }}>
+                      <div className="ec-pedido-top">
+                        <div><div className="ec-pedido-cliente">{p.cliente}</div><div className="ec-pedido-meta">{p.producto} · {p.unidades} u. · {p.categoria} · Día {p.dia} · {fmtMoney(p.total)}</div></div>
+                        {editingRow !== p.fila && <span className={`ec-badge ${claseBadgeEstado(p.estado)}`}>{etiquetaEstado(p.estado)}</span>}
+                      </div>
+                      {editingRow === p.fila ? (
+                        <div style={{ marginTop: 10 }}>
+                          <div className="ec-field"><label>Estado</label>
+                            <select className="ec-select-inline" value={editVals.estado} onChange={(e) => setEditVals({ ...editVals, estado: e.target.value })}>
+                              <option value="PENDIENTE">Pendiente</option>
+                              <option value="EN PROCESO">En proceso</option>
+                              <option value="DESPACHADO">Despachado</option>
+                            </select>
+                          </div>
+                          <div className="ec-field"><label>¿Faltante?</label>
+                            <select className="ec-select-inline" value={editVals.faltante ? "si" : "no"} onChange={(e) => setEditVals({ ...editVals, faltante: e.target.value === "si" })}>
+                              <option value="no">No</option><option value="si">Sí</option>
+                            </select>
+                          </div>
+                          <div className="ec-row-actions">
+                            <button className="ec-btn ec-btn-primary" onClick={() => guardarFila(p)}>Guardar</button>
+                            <button className="ec-btn ec-btn-ghost" onClick={() => setEditingRow(null)}>Cancelar</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          {p.faltante && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Producto faltante: {p.producto}</div>}
+                          <button className="ec-btn ec-btn-ghost" style={{ marginTop: 8, padding: "6px 10px" }} onClick={() => startEdit(p)}>Editar estado <ChevronRight size={13} /></button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })
       )}
     </div>
   );
 }
-
 // ---------------- ROOT ----------------
 
 function AppInner() {
