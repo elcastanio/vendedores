@@ -89,3 +89,11 @@ export async function fetchObjetivoDesdeSheet(sheetUrl, mes) {
   const sheetId = extraerSheetId(sheetUrl);
   return llamar("fetchObjetivoSheet", { sheetId, mes });
 }
+
+// Instala (una sola vez) el aviso automático en la planilla del vendedor:
+// si alguien marca Despachado directo ahí y con eso se completa la semana,
+// dispara la notificación solo, sin pasar por la app.
+export async function instalarDisparadorSheet(sheetUrl) {
+  const sheetId = extraerSheetId(sheetUrl);
+  return llamar("instalarDisparador", { sheetId });
+}
