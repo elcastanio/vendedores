@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import * as db from "./db";
 import * as sheets from "./sheetsClient";
-import { soportaPush, suscribirVendedor, yaEstaSuscripto, notificarDespacho } from "./push";
+import { soportaPush, suscribirVendedor, yaEstaSuscripto } from "./push";
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "castano2026";
 
@@ -1355,7 +1355,6 @@ function PedidosAdmin({ vendors }) {
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
   const [preparando, setPreparando] = useState(false);
-  const [instalando, setInstalando] = useState(false);
   const [despachandoSemana, setDespachandoSemana] = useState(null);
   const [editingRow, setEditingRow] = useState(null);
   const [editVals, setEditVals] = useState({});
@@ -1395,35 +1394,12 @@ function PedidosAdmin({ vendors }) {
     setPreparando(false);
   };
 
-  const instalarAviso = async () => {
-    if (!vendor || !vendor.sheetUrl) return;
-    setError(""); setOk(""); setInstalando(true);
-    try {
-      const res = await sheets.instalarDisparadorSheet(vendor.sheetUrl);
-      setOk(res.yaInstalado ? "Ese aviso ya estaba instalado en esta planilla." : `Listo — a partir de ahora, marcar Despachado directo en la planilla de ${vendor.nombre} también avisa solo.`);
-    } catch (e) { setError("No se pudo instalar: " + e.message); }
-    setInstalando(false);
-  };
-
   const startEdit = (p) => { setEditingRow(p.fila); setEditVals({ estado: p.estado, faltante: p.faltante }); };
   const guardarFila = async (p) => {
     try {
-      const semanaKey = infoSemana(p.dia, referencia).key;
-      const lineasAntes = (pedidos || []).filter((x) => infoSemana(x.dia, referencia).key === semanaKey);
-      const estabaCompleta = estadoAgregado(lineasAntes) === "DESPACHADO";
-
       await sheets.updatePedidoSheet(vendor.sheetUrl, mes, p.fila, editVals);
       setEditingRow(null);
-      const nuevos = await sheets.fetchPedidosSheet(vendor.sheetUrl, mes);
-      setPedidos(nuevos);
-
-      if (!estabaCompleta && editVals.estado === "DESPACHADO") {
-        const lineasAhora = nuevos.filter((x) => infoSemana(x.dia, referencia).key === semanaKey);
-        if (estadoAgregado(lineasAhora) === "DESPACHADO") {
-          const label = infoSemana(p.dia, referencia).label;
-          await notificarDespacho(vendor.id, `¡Se despachó tu pedido de la ${label.toLowerCase()}! ✅`);
-        }
-      }
+      setPedidos(await sheets.fetchPedidosSheet(vendor.sheetUrl, mes));
     } catch (e) { setError("No se pudo guardar: " + e.message); }
   };
 
@@ -1434,11 +1410,8 @@ function PedidosAdmin({ vendors }) {
       for (const linea of pendientes) {
         await sheets.updatePedidoSheet(vendor.sheetUrl, mes, linea.fila, { estado: "DESPACHADO" });
       }
-      const nuevos = await sheets.fetchPedidosSheet(vendor.sheetUrl, mes);
-      setPedidos(nuevos);
-      if (pendientes.length > 0) {
-        await notificarDespacho(vendor.id, `¡Se despachó tu pedido de la ${semana.label.toLowerCase()}! ✅`);
-      }
+      setPedidos(await sheets.fetchPedidosSheet(vendor.sheetUrl, mes));
+      if (pendientes.length > 0) setOk("Semana despachada. Al vendedor le llega el aviso en unos minutos.");
     } catch (e) { setError("No se pudo despachar la semana: " + e.message); }
     setDespachandoSemana(null);
   };
@@ -1459,9 +1432,6 @@ function PedidosAdmin({ vendors }) {
       <div className="ec-row-actions" style={{ marginBottom: 10, flexWrap: "wrap" }}>
         <button className="ec-btn ec-btn-ghost" disabled={preparando || !vendor?.sheetUrl} onClick={prepararColumnas}>
           {preparando ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check size={15} />} Preparar columnas de esta solapa
-        </button>
-        <button className="ec-btn ec-btn-ghost" disabled={instalando || !vendor?.sheetUrl} onClick={instalarAviso}>
-          {instalando ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <Bell size={15} />} Instalar aviso automático en esta planilla
         </button>
       </div>
       {vendor && !vendor.sheetUrl && <div className="ec-error">Este vendedor todavía no tiene planilla vinculada.</div>}
