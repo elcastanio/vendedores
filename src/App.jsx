@@ -440,6 +440,23 @@ function infoSemana(diaDelMes, referencia) {
   return { key: lunes.toISOString().slice(0, 10), label: `Semana del ${fmt(lunes)} al ${fmt(domingo)}` };
 }
 
+// Resumen de un despacho: faltantes (o "Sin faltantes"), cajas y nota.
+function ResumenDespacho({ faltantes, despacho }) {
+  return (
+    <div style={{ marginTop: 10, padding: "9px 11px", background: TOKENS.cream, borderRadius: 8, fontSize: 13, lineHeight: 1.55 }}>
+      <div>{faltantes.length > 0 ? <><b>Faltantes:</b> {faltantes.join(", ")}</> : <b>Sin faltantes</b>}</div>
+      {despacho && despacho.cajas ? <div><b>Cajas:</b> {despacho.cajas}</div> : null}
+      {despacho && despacho.nota ? <div style={{ color: TOKENS.textSoft }}>{despacho.nota}</div> : null}
+    </div>
+  );
+}
+
+function faltantesDe(lineas) {
+  const out = [];
+  lineas.forEach((l) => { if (l.faltante && out.indexOf(l.producto) === -1) out.push(l.producto); });
+  return out;
+}
+
 function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, mesRealClave }) {
   const [fecha, setFecha] = useState(fechaHoy);
   const [categoria, setCategoria] = useState(db.CATEGORIAS[0]);
@@ -681,6 +698,10 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                     <ChevronRight size={16} style={{ transform: abierta ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
                   </div>
                 </div>
+                <ResumenDespacho
+                  faltantes={faltantesDe(todasLineas)}
+                  despacho={((pedidosDelMes && pedidosDelMes.despachos) || []).find((d) => d.semana === sem.key && d.mes.toLowerCase() === mesVista.toLowerCase())}
+                />
                 {abierta && (
                   <div style={{ marginTop: 10, borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8 }}>
                     {sem.ordenes.map((g, i) => {
@@ -1359,6 +1380,9 @@ function PedidosAdmin({ vendors }) {
   const [ok, setOk] = useState("");
   const [preparando, setPreparando] = useState(false);
   const [despachandoSemana, setDespachandoSemana] = useState(null);
+  const [formSemana, setFormSemana] = useState(null);
+  const [cajasInput, setCajasInput] = useState("");
+  const [notaInput, setNotaInput] = useState("");
   const [editingRow, setEditingRow] = useState(null);
   const [editVals, setEditVals] = useState({});
   const [semanaAbierta, setSemanaAbierta] = useState(null);
@@ -1406,16 +1430,34 @@ function PedidosAdmin({ vendors }) {
     } catch (e) { setError("No se pudo guardar: " + e.message); }
   };
 
-  const despacharSemana = async (semana) => {
-    setError(""); setDespachandoSemana(semana.key);
+  const despachoDe = (key) => ((pedidos && pedidos.despachos) || []).find((d) => d.semana === key && d.mes.toLowerCase() === mes.toLowerCase());
+
+  const abrirDespacho = (semana) => {
+    const d = despachoDe(semana.key);
+    setCajasInput(d && d.cajas ? String(d.cajas) : "");
+    setNotaInput(d ? d.nota : "");
+    setFormSemana(semana.key);
+  };
+
+  // Guarda cajas y nota de la semana y, si corresponde, marca todas las
+  // líneas como DESPACHADO. Los datos se guardan primero, así el aviso que
+  // sale unos minutos después ya los incluye.
+  const confirmarDespacho = async (semana, despachar) => {
+    setError(""); setOk(""); setDespachandoSemana(semana.key);
     try {
-      const pendientes = semana.lineas.filter((l) => l.estado !== "DESPACHADO");
-      for (const linea of pendientes) {
-        await sheets.updatePedidoSheet(vendor.sheetUrl, mes, linea.fila, { estado: "DESPACHADO" });
+      await sheets.guardarDespachoSheet(vendor.sheetUrl, {
+        mes, semana: semana.key, cajas: cajasInput === "" ? "" : Number(cajasInput), nota: notaInput.trim(),
+      });
+      if (despachar) {
+        const pendientes = semana.lineas.filter((l) => l.estado !== "DESPACHADO");
+        for (const linea of pendientes) {
+          await sheets.updatePedidoSheet(vendor.sheetUrl, mes, linea.fila, { estado: "DESPACHADO" });
+        }
       }
       setPedidos(await sheets.fetchPedidosSheet(vendor.sheetUrl, mes));
-      if (pendientes.length > 0) setOk("Semana despachada. Al vendedor le llega el aviso en unos minutos.");
-    } catch (e) { setError("No se pudo despachar la semana: " + e.message); }
+      setFormSemana(null);
+      setOk(despachar ? "Semana despachada. Al vendedor le llega el aviso en unos minutos." : "Datos del despacho guardados.");
+    } catch (e) { setError("No se pudo guardar el despacho: " + e.message); }
     setDespachandoSemana(null);
   };
 
@@ -1459,14 +1501,23 @@ function PedidosAdmin({ vendors }) {
                   <ChevronRight size={16} style={{ transform: abierta ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
                 </div>
               </div>
-              {estado !== "DESPACHADO" && (
-                <button
-                  className="ec-btn ec-btn-primary"
-                  style={{ marginTop: 10 }}
-                  disabled={despachandoSemana === sem.key}
-                  onClick={(e) => { e.stopPropagation(); despacharSemana(sem); }}
-                >
-                  {despachandoSemana === sem.key ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check size={15} />} Despachar toda la semana
+              <ResumenDespacho faltantes={faltantesDe(sem.lineas)} despacho={despachoDe(sem.key)} />
+              {formSemana === sem.key ? (
+                <div style={{ marginTop: 10 }}>
+                  <div className="ec-row2">
+                    <div className="ec-field"><label>Cajas</label><input type="number" min="0" value={cajasInput} onChange={(e) => setCajasInput(e.target.value)} placeholder="0" /></div>
+                    <div className="ec-field"><label>Nota (opcional)</label><input value={notaInput} onChange={(e) => setNotaInput(e.target.value)} /></div>
+                  </div>
+                  <div className="ec-row-actions">
+                    <button className="ec-btn ec-btn-primary" disabled={despachandoSemana === sem.key} onClick={() => confirmarDespacho(sem, estado !== "DESPACHADO")}>
+                      {despachandoSemana === sem.key ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check size={15} />} {estado !== "DESPACHADO" ? "Confirmar despacho" : "Guardar datos"}
+                    </button>
+                    <button className="ec-btn ec-btn-ghost" onClick={() => setFormSemana(null)}>Cancelar</button>
+                  </div>
+                </div>
+              ) : (
+                <button className={estado !== "DESPACHADO" ? "ec-btn ec-btn-primary" : "ec-btn ec-btn-ghost"} style={{ marginTop: 10 }} onClick={() => abrirDespacho(sem)}>
+                  {estado !== "DESPACHADO" ? <><Check size={15} /> Despachar toda la semana</> : "Editar cajas y nota"}
                 </button>
               )}
               {abierta && (
