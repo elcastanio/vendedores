@@ -10,7 +10,7 @@ import * as sheets from "./sheetsClient";
 import { soportaPush, suscribirVendedor, yaEstaSuscripto } from "./push";
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "castano2026";
-
+|
 const TOKENS = {
   bg: "#EFE9DC", surface: "#FFFDF8", border: "#D9CEB7", text: "#2B2115", textSoft: "#6E6250",
   olive: "#6B7A3D", oliveDark: "#4F5C2A", rust: "#B5542A", rustDark: "#8E3F1D", danger: "#A13A2E", cream: "#F6F1E4",
@@ -1517,7 +1517,22 @@ function AppInner() {
   const [loadError, setLoadError] = useState("");
   const [vendors, setVendors] = useState([]);
   const [products, setProducts] = useState([]);
-  const [session, setSession] = useState(null);
+  // La sesión del vendedor queda guardada en el celular hasta que toque
+  // "Salir". La del administrador no se guarda.
+  const [session, setSession] = useState(() => {
+    try {
+      const guardado = localStorage.getItem("ec_vendor_id");
+      return guardado ? { role: "vendor", vendorId: guardado } : null;
+    } catch (e) { return null; }
+  });
+  const loginVendedor = (vendorId) => {
+    try { localStorage.setItem("ec_vendor_id", vendorId); } catch (e) {}
+    setSession({ role: "vendor", vendorId });
+  };
+  const cerrarSesion = () => {
+    try { localStorage.removeItem("ec_vendor_id"); } catch (e) {}
+    setSession(null);
+  };
 
   const refreshVendors = useCallback(async () => setVendors(await db.fetchVendors()), []);
   const refreshProducts = useCallback(async () => setProducts(await db.fetchProducts()), []);
@@ -1547,13 +1562,16 @@ function AppInner() {
           <div style={{ fontSize: 13, color: TOKENS.textSoft }}>{loadError}</div>
         </div></div></div>
       ) : session === null ? (
-        <LoginScreen vendors={vendors} onVendorLogin={(vendorId) => setSession({ role: "vendor", vendorId })} onAdminLogin={() => setSession({ role: "admin" })} />
+        <LoginScreen vendors={vendors} onVendorLogin={loginVendedor} onAdminLogin={() => setSession({ role: "admin" })} />
       ) : session.role === "admin" ? (
-        <AdminApp vendors={vendors} products={products} onLogout={() => setSession(null)} refreshVendors={refreshVendors} refreshProducts={refreshProducts} />
+        <AdminApp vendors={vendors} products={products} onLogout={cerrarSesion} refreshVendors={refreshVendors} refreshProducts={refreshProducts} />
       ) : activeVendor ? (
-        <VendorApp vendor={activeVendor} products={products} onLogout={() => setSession(null)} />
+        <VendorApp vendor={activeVendor} products={products} onLogout={cerrarSesion} />
       ) : (
-        <div className="ec-shell"><div className="ec-empty">Tu usuario ya no existe. Contactá al administrador.</div></div>
+        <div className="ec-shell"><div className="ec-empty">
+          Tu usuario ya no existe. Contactá al administrador.
+          <div style={{ marginTop: 12 }}><button className="ec-btn ec-btn-ghost" onClick={cerrarSesion}>Volver al inicio</button></div>
+        </div></div>
       )}
     </>
   );
