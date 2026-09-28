@@ -46,7 +46,11 @@ export async function addPedidoSheet(sheetUrl, { fecha, categoria, cliente, prod
 export async function fetchPedidosSheet(sheetUrl, mes) {
   const sheetId = extraerSheetId(sheetUrl);
   const data = await llamar("fetchPedidos", { sheetId, mes });
-  return data.pedidos || [];
+  const pedidos = data.pedidos || [];
+  // Los datos del despacho (cajas y nota de cada semana) viajan en la misma
+  // consulta; quedan disponibles como pedidos.despachos.
+  pedidos.despachos = data.despachos || [];
+  return pedidos;
 }
 
 export async function updatePedidoSheet(sheetUrl, mes, fila, fields) {
@@ -90,3 +94,10 @@ export async function fetchObjetivoDesdeSheet(sheetUrl, mes) {
   return llamar("fetchObjetivoSheet", { sheetId, mes });
 }
 
+
+// Datos de cada despacho semanal (cajas y nota), guardados en la solapa
+// "Despachos" de la planilla del vendedor.
+export async function guardarDespachoSheet(sheetUrl, { mes, semana, cajas, nota }) {
+  const sheetId = extraerSheetId(sheetUrl);
+  return llamar("guardarDespacho", { sheetId, mes, semana, cajas, nota });
+}
