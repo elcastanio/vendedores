@@ -215,6 +215,8 @@ function VendorApp({ vendor, products, onLogout }) {
   const [stockError, setStockError] = useState("");
   const [suscripto, setSuscripto] = useState(null);
   const [activando, setActivando] = useState(false);
+  const [avisos, setAvisos] = useState([]);
+  const [avisoAbierto, setAvisoAbierto] = useState(null);
   const mesActualVendor = sheets.mesDeFecha(fechaHoy());
 
   const cargarPedidosMes = useCallback(async () => {
@@ -248,6 +250,53 @@ function VendorApp({ vendor, products, onLogout }) {
     registrarSiYaSuscripto(vendor.id).catch(() => {});
   }, [vendor.id]);
 
+  const cargarAvisos = useCallback(async () => {
+    try { setAvisos(await db.fetchNotificaciones(vendor.id)); } catch (e) {}
+  }, [vendor.id]);
+  useEffect(() => { cargarAvisos(); }, [cargarAvisos]);
+
+  // Al volver a la app (por ejemplo desde una notificación) se refrescan los avisos.
+  useEffect(() => {
+    const alVolver = () => { if (document.visibilityState === "visible") cargarAvisos(); };
+    document.addEventListener("visibilitychange", alVolver);
+    return () => document.removeEventListener("visibilitychange", alVolver);
+  }, [cargarAvisos]);
+
+  const abrirAviso = useCallback((id) => {
+    setTab("avisos");
+    setAvisoAbierto(id || null);
+    cargarAvisos();
+  }, [cargarAvisos]);
+
+  // Abrir un aviso desde la notificación: con la app cerrada llega por la URL
+  // (?aviso=ID); con la app abierta, por un mensaje del service worker.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("aviso");
+    if (id) {
+      abrirAviso(id);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    const alMensaje = (e) => { if (e.data && e.data.tipo === "abrirAviso") abrirAviso(e.data.avisoId); };
+    if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", alMensaje);
+    return () => { if ("serviceWorker" in navigator) navigator.serviceWorker.removeEventListener("message", alMensaje); };
+  }, [abrirAviso]);
+
+  // Un aviso abierto se marca como leído.
+  useEffect(() => {
+    if (!avisoAbierto) return;
+    const a = avisos.find((x) => x.id === avisoAbierto);
+    if (a && !a.leida) {
+      setAvisos((prev) => prev.map((x) => (x.id === a.id ? { ...x, leida: true } : x)));
+      db.marcarNotificacionLeida(a.id).catch(() => {});
+    }
+  }, [avisoAbierto, avisos]);
+
+  const leerTodos = () => {
+    setAvisos((prev) => prev.map((x) => ({ ...x, leida: true })));
+    db.marcarTodasLeidas(vendor.id).catch(() => {});
+  };
+  const noLeidos = avisos.filter((a) => !a.leida).length;
+
   const activarNotificaciones = async () => {
     setActivando(true);
     try { await suscribirVendedor(vendor.id); setSuscripto(true); }
@@ -259,7 +308,15 @@ function VendorApp({ vendor, products, onLogout }) {
     <div className="ec-shell">
       <div className="ec-topbar">
         <div><img src="/logo.png" alt="El Castaño" style={{ height: 22 }} /><div className="ec-sub" style={{ marginTop: 4 }}>Hola, {vendor.nombre}</div></div>
-        <button className="ec-btn ec-btn-ghost" onClick={onLogout}><LogOut size={14} /> Salir</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button className="ec-btn ec-btn-ghost" style={{ position: "relative" }} onClick={() => { setTab("avisos"); setAvisoAbierto(null); }} aria-label="Avisos">
+            <Bell size={14} />
+            {noLeidos > 0 && (
+              <span style={{ position: "absolute", top: -7, right: -7, background: TOKENS.rust, color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, minWidth: 17, height: 17, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>{noLeidos}</span>
+            )}
+          </button>
+          <button className="ec-btn ec-btn-ghost" onClick={onLogout}><LogOut size={14} /> Salir</button>
+        </div>
       </div>
       <div className="ec-content">
         {suscripto === false && soportaPush() && (
@@ -278,6 +335,7 @@ function VendorApp({ vendor, products, onLogout }) {
             Todavía no tenés una planilla vinculada. Pedile al administrador que la cargue en tu ficha.
           </div></div>
         )}
+        {tab === "avisos" && <AvisosTab avisos={avisos} abierto={avisoAbierto} setAbierto={setAvisoAbierto} onLeerTodos={leerTodos} onIrAPedidos={() => setTab("pedidos")} />}
         {tab === "pedidos" && <PedidosTab vendor={vendor} products={products} pedidos={pedidosMes} loadError={pedidosError} onChanged={cargarPedidosMes} mesReal={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "objetivo" && <ObjetivoTab vendor={vendor} pedidos={pedidosMes} loadError={pedidosError} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "stock" && <StockTab vendor={vendor} products={products} stock={stock} loadError={stockError} onChanged={cargarStock} />}
@@ -443,6 +501,56 @@ function infoSemana(diaDelMes, referencia) {
   domingo.setDate(domingo.getDate() + 6);
   const fmt = (d) => `${d.getDate()}/${d.getMonth() + 1}`;
   return { key: lunes.toISOString().slice(0, 10), label: `Semana del ${fmt(lunes)} al ${fmt(domingo)}` };
+}
+
+function fmtFechaAviso(iso) {
+  const [, m, d] = String(iso).split("-");
+  return `${Number(d)}/${Number(m)}`;
+}
+
+// Bandeja de avisos del vendedor. Al abrir uno se muestra el detalle.
+function AvisosTab({ avisos, abierto, setAbierto, onLeerTodos, onIrAPedidos }) {
+  const noLeidos = avisos.filter((a) => !a.leida).length;
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 10px" }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: TOKENS.textSoft }}>AVISOS</span>
+        {noLeidos > 0 && (
+          <button className="ec-btn ec-btn-ghost" style={{ padding: "5px 9px", fontSize: 12 }} onClick={onLeerTodos}>Marcar todos como leídos</button>
+        )}
+      </div>
+      {avisos.length === 0 ? (
+        <div className="ec-empty">Todavía no tenés avisos. Cuando despachemos tus pedidos, aparecen acá.</div>
+      ) : (
+        avisos.map((a) => {
+          const abiertoEste = abierto === a.id;
+          return (
+            <div className="ec-card" key={a.id} style={!a.leida ? { borderColor: TOKENS.rust } : undefined}>
+              <div className="ec-pedido-top" style={{ cursor: "pointer" }} onClick={() => setAbierto(abiertoEste ? null : a.id)}>
+                <div>
+                  <div className="ec-pedido-cliente">
+                    {!a.leida && <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, background: TOKENS.rust, marginRight: 7 }} />}
+                    Pedidos despachados
+                  </div>
+                  <div className="ec-pedido-meta">{fmtFechaAviso(a.fechaDespacho)}{a.semanaLabel ? ` · Semana del ${a.semanaLabel}` : ""}</div>
+                </div>
+                <ChevronRight size={16} style={{ transform: abiertoEste ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
+              </div>
+              {abiertoEste && (
+                <div style={{ marginTop: 10, borderTop: `1px solid ${TOKENS.border}`, paddingTop: 10, fontSize: 14, lineHeight: 1.65 }}>
+                  <div>Tus pedidos se despacharon el <b>{fmtFechaAviso(a.fechaDespacho)}</b>.</div>
+                  {a.cajas ? <div>Recibís <b>{a.cajas} {a.cajas === 1 ? "caja" : "cajas"}</b>.</div> : null}
+                  <div>{a.faltantes.length > 0 ? <>Faltante: <b>{a.faltantes.join(", ")}</b></> : "Sin faltantes."}</div>
+                  <div style={{ color: TOKENS.textSoft, marginTop: 6 }}>Revisá el detalle de la semana para más información.</div>
+                  <button className="ec-btn ec-btn-primary" style={{ marginTop: 12 }} onClick={onIrAPedidos}>Ver mis pedidos</button>
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+    </>
+  );
 }
 
 // Resumen de un despacho: faltantes (o "Sin faltantes"), cajas y nota.
