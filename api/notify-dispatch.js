@@ -28,20 +28,29 @@ export default async function handler(req, res) {
     const { data, error } = await supabase.from("push_subscriptions").select("*").eq("vendor_id", vendorIdFinal);
     if (error) throw error;
 
+    // Si un mismo celular quedó registrado dos veces, se le manda una sola vez.
+    const vistos = new Set();
+    const destinos = (data || []).filter((row) => {
+      const ep = row.subscription && row.subscription.endpoint;
+      if (!ep || vistos.has(ep)) return false;
+      vistos.add(ep);
+      return true;
+    });
+
     const payload = JSON.stringify({
       title: "El Castaño",
       body: mensaje || "Se despachó tu pedido de la semana.",
     });
 
     const resultados = await Promise.allSettled(
-      (data || []).map((row) => webpush.sendNotification(row.subscription, payload))
+      destinos.map((row) => webpush.sendNotification(row.subscription, payload))
     );
 
     // Si una suscripción quedó vieja/inválida (410/404), la borramos.
     for (let i = 0; i < resultados.length; i++) {
       const r = resultados[i];
       if (r.status === "rejected" && (r.reason?.statusCode === 410 || r.reason?.statusCode === 404)) {
-        await supabase.from("push_subscriptions").delete().eq("id", data[i].id);
+        await supabase.from("push_subscriptions").delete().eq("id", destinos[i].id);
       }
     }
 
