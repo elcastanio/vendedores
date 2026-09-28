@@ -43,6 +43,22 @@ export async function suscribirVendedor(vendorId) {
   return true;
 }
 
+// Si este celu ya tiene el permiso y una suscripción, la registra también
+// para el vendedor que está usando la app (por ejemplo, al cambiar de usuario
+// en el mismo celular). No pregunta nada. Devuelve true si registró.
+export async function registrarSiYaSuscripto(vendorId) {
+  if (!soportaPush() || Notification.permission !== "granted") return false;
+  const registro = await navigator.serviceWorker.ready;
+  const subscription = await registro.pushManager.getSubscription();
+  if (!subscription) return false;
+  const res = await fetch("/api/save-subscription", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ vendorId, subscription: subscription.toJSON() }),
+  });
+  return res.ok;
+}
+
 export async function yaEstaSuscripto() {
   if (!soportaPush()) return false;
   const registro = await navigator.serviceWorker.ready;
