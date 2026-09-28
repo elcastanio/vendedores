@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import * as db from "./db";
 import * as sheets from "./sheetsClient";
-import { soportaPush, suscribirVendedor, yaEstaSuscripto } from "./push";
+import { soportaPush, suscribirVendedor, yaEstaSuscripto, registrarSiYaSuscripto } from "./push";
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "castano2026";
 
@@ -241,7 +241,12 @@ function VendorApp({ vendor, products, onLogout }) {
   useEffect(() => { cargarPedidosMes(); }, [cargarPedidosMes]);
   useEffect(() => { cargarRendiciones(); }, [cargarRendiciones]);
   useEffect(() => { cargarStock(); }, [cargarStock]);
-  useEffect(() => { if (soportaPush()) yaEstaSuscripto().then(setSuscripto); else setSuscripto(false); }, []);
+  useEffect(() => {
+    if (!soportaPush()) { setSuscripto(false); return; }
+    yaEstaSuscripto().then(setSuscripto);
+    // Si el celu ya tiene el permiso, lo registramos también para este vendedor.
+    registrarSiYaSuscripto(vendor.id).catch(() => {});
+  }, [vendor.id]);
 
   const activarNotificaciones = async () => {
     setActivando(true);
