@@ -198,3 +198,25 @@ export async function marcarStockVendido(id) {
   const { error } = await supabase.from("stock_extra").update({ estado: "Vendido" }).eq("id", id);
   if (error) throw error;
 }
+
+// ---------- AVISOS (bandeja de notificaciones del vendedor) ----------
+
+export async function fetchNotificaciones(vendorId) {
+  const { data, error } = await supabase.from("notificaciones").select("*").eq("vendor_id", vendorId).order("creada_en", { ascending: false }).limit(50);
+  if (error) throw error;
+  return (data || []).map((n) => ({
+    id: n.id, fechaDespacho: n.fecha_despacho, semanaLabel: n.semana_label || "", mes: n.mes || "",
+    cajas: n.cajas === null || n.cajas === undefined ? null : Number(n.cajas),
+    faltantes: Array.isArray(n.faltantes) ? n.faltantes : [], leida: !!n.leida, creadaEn: n.creada_en,
+  }));
+}
+
+export async function marcarNotificacionLeida(id) {
+  const { error } = await supabase.from("notificaciones").update({ leida: true }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function marcarTodasLeidas(vendorId) {
+  const { error } = await supabase.from("notificaciones").update({ leida: true }).eq("vendor_id", vendorId).eq("leida", false);
+  if (error) throw error;
+}
