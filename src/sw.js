@@ -22,18 +22,24 @@ self.addEventListener("push", (event) => {
       body: data.body || "",
       icon: "/icon-192.png",
       badge: "/icon-192.png",
+      data: { avisoId: data.avisoId || null },
     })
   );
 });
 
+// Al tocar la notificación se abre la app directo en ese aviso.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  const avisoId = (event.notification.data && event.notification.data.avisoId) || null;
   event.waitUntil(
-    self.clients.matchAll({ type: "window" }).then((clientList) => {
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if ("focus" in client) return client.focus();
+        if ("focus" in client) {
+          client.postMessage({ tipo: "abrirAviso", avisoId });
+          return client.focus();
+        }
       }
-      if (self.clients.openWindow) return self.clients.openWindow("/");
+      if (self.clients.openWindow) return self.clients.openWindow(avisoId ? "/?aviso=" + encodeURIComponent(avisoId) : "/");
     })
   );
 });
