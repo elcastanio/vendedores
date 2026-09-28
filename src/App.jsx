@@ -10,7 +10,7 @@ import * as sheets from "./sheetsClient";
 import { soportaPush, suscribirVendedor, yaEstaSuscripto } from "./push";
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "castano2026";
-|
+
 const TOKENS = {
   bg: "#EFE9DC", surface: "#FFFDF8", border: "#D9CEB7", text: "#2B2115", textSoft: "#6E6250",
   olive: "#6B7A3D", oliveDark: "#4F5C2A", rust: "#B5542A", rustDark: "#8E3F1D", danger: "#A13A2E", cream: "#F6F1E4",
