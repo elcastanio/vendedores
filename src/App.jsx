@@ -31,7 +31,7 @@ function GlobalStyle() {
       .ec-brand span { color: ${TOKENS.rust}; }
       .ec-sub { font-size: 12.5px; color: ${TOKENS.textSoft}; margin-top: 2px; }
       .ec-content { flex: 1; padding: 18px 18px 100px; overflow-y: auto; }
-      .ec-card { background: ${TOKENS.surface}; border: 1px solid ${TOKENS.border}; border-radius: 10px; padding: 16px; margin-bottom: 14px; overflow: hidden; }
+      .ec-card { background: ${TOKENS.surface}; border: 1px solid ${TOKENS.border}; border-radius: 10px; padding: 16px; margin-bottom: 14px; }
       .ec-card h3 { margin: 0 0 12px; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
       .ec-field { margin-bottom: 12px; max-width: 100%; }
       .ec-field label { display: block; font-size: 12.5px; color: ${TOKENS.textSoft}; margin-bottom: 5px; }
@@ -354,8 +354,11 @@ function ProductPicker({ products, value, onChange, placeholder }) {
   }, [value, products]);
 
   const filtrados = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const base = q ? products.filter((p) => p.nombre.toLowerCase().includes(q)) : products;
+    const limpiar = (s) => String(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const palabras = limpiar(query).trim().split(/\s+/).filter(Boolean);
+    const base = palabras.length
+      ? products.filter((p) => { const n = limpiar(p.nombre); return palabras.every((w) => n.includes(w)); })
+      : products;
     return base.slice(0, 40);
   }, [query, products]);
 
