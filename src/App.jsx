@@ -3,10 +3,11 @@ import * as XLSX from "xlsx";
 import {
   ClipboardList, Target, Package, Wallet, LogOut, Plus, Check, X, Loader2,
   ShieldCheck, Users, Boxes, ListChecks, ChevronRight, AlertTriangle, Upload,
-  ExternalLink, RefreshCw, Bell, BellOff, Pencil,
+  ExternalLink, RefreshCw, Bell, BellOff, Pencil, FileDown,
 } from "lucide-react";
 import * as db from "./db";
 import * as sheets from "./sheetsClient";
+import { descargarComprobantePedido } from "./pdfTicket";
 import { soportaPush, suscribirVendedor, yaEstaSuscripto, registrarSiYaSuscripto } from "./push";
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "castano2026";
@@ -671,6 +672,18 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
     catch (e) { alert(e.message); }
   };
 
+  const [descargando, setDescargando] = useState(null);
+  const descargarPdf = async (g) => {
+    const clave = g.cliente + "-" + g.dia;
+    setDescargando(clave);
+    try {
+      await descargarComprobantePedido({
+        vendorNombre: vendor.nombre, cliente: g.cliente, dia: g.dia, mesNombre: mesVista, lineas: g.lineas,
+      });
+    } catch (e) { alert("No se pudo generar el PDF: " + e.message); }
+    setDescargando(null);
+  };
+
   const guardarPedido = async () => {
     setError("");
     if (!cliente.trim()) { setError("Completá el nombre del cliente."); return; }
@@ -819,7 +832,12 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                             <div key={i} style={{ marginBottom: 10 }}>
                               <div className="ec-pedido-top">
                                 <div><div className="ec-pedido-cliente">{g.cliente}</div><div className="ec-pedido-meta">Día {g.dia} · {g.categoria}</div></div>
-                                <span className={`ec-badge ${claseBadgeEstado(estadoAgregado(g.lineas))}`}>{etiquetaEstado(estadoAgregado(g.lineas))}</span>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <button type="button" onClick={() => descargarPdf(g)} disabled={descargando === g.cliente + "-" + g.dia} className="ec-btn ec-btn-ghost" style={{ padding: "5px 8px" }} aria-label="Descargar comprobante">
+                                    {descargando === g.cliente + "-" + g.dia ? <Loader2 size={13} style={{ animation: "spin 0.9s linear infinite" }} /> : <FileDown size={13} />}
+                                  </button>
+                                  <span className={`ec-badge ${claseBadgeEstado(estadoAgregado(g.lineas))}`}>{etiquetaEstado(estadoAgregado(g.lineas))}</span>
+                                </div>
                               </div>
                               {g.lineas.map((l) => (
                                 <div key={l.fila}>
@@ -898,6 +916,9 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                         <div key={i} style={{ marginBottom: 12 }}>
                           <div className="ec-pedido-top">
                             <div><div className="ec-pedido-cliente">{g.cliente}</div><div className="ec-pedido-meta">Día {g.dia} · {g.categoria}</div></div>
+                            <button type="button" onClick={() => descargarPdf(g)} disabled={descargando === g.cliente + "-" + g.dia} className="ec-btn ec-btn-ghost" style={{ padding: "5px 8px" }} aria-label="Descargar comprobante">
+                              {descargando === g.cliente + "-" + g.dia ? <Loader2 size={13} style={{ animation: "spin 0.9s linear infinite" }} /> : <FileDown size={13} />}
+                            </button>
                           </div>
                           {g.lineas.map((l) => (
                             <div key={l.fila}>
