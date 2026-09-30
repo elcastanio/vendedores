@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import {
   ClipboardList, Target, Package, Wallet, LogOut, Plus, Check, X, Loader2,
   ShieldCheck, Users, Boxes, ListChecks, ChevronRight, AlertTriangle, Upload,
-  ExternalLink, RefreshCw, Bell, BellOff,
+  ExternalLink, RefreshCw, Bell, BellOff, Pencil,
 } from "lucide-react";
 import * as db from "./db";
 import * as sheets from "./sheetsClient";
@@ -580,6 +580,10 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
   const [semanaAbierta, setSemanaAbierta] = useState(null);
+  const [editandoLinea, setEditandoLinea] = useState(null);
+  const [edLinea, setEdLinea] = useState({ categoria: "", cliente: "", productoId: "", unidades: "" });
+  const [guardandoLinea, setGuardandoLinea] = useState(false);
+  const [errorLinea, setErrorLinea] = useState("");
   const [mesConsulta, setMesConsulta] = useState(mesRealClave);
   const [pedidosPropios, setPedidosPropios] = useState(null);
   const [errorPropio, setErrorPropio] = useState("");
@@ -626,6 +630,46 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
   };
 
   const quitarDelCarrito = (id) => setCarrito(carrito.filter((l) => l.id !== id));
+
+  // Si la línea ya no está pendiente (la agarró administración), avisamos
+  // con la alerta en vez de dejar tocar nada.
+  const intentarTocarLinea = (l) => {
+    if (l.estado !== "PENDIENTE") {
+      alert("Este pedido ya está en proceso. Para modificarlo o anularlo, contactate con administración.");
+      return false;
+    }
+    return true;
+  };
+
+  const empezarEdicion = (l) => {
+    if (!intentarTocarLinea(l)) return;
+    setErrorLinea("");
+    const prod = products.find((p) => p.nombre === l.producto);
+    setEdLinea({ categoria: l.categoria, cliente: l.cliente, productoId: prod ? prod.id : "", unidades: String(l.unidades) });
+    setEditandoLinea(l.fila);
+  };
+
+  const guardarEdicionLinea = async (l) => {
+    setErrorLinea("");
+    const prod = products.find((p) => p.id === edLinea.productoId);
+    if (!prod || !edLinea.unidades || Number(edLinea.unidades) <= 0) { setErrorLinea("Elegí un producto y unidades (mayor a 0)."); return; }
+    setGuardandoLinea(true);
+    try {
+      await sheets.editarPedidoSheet(vendor.sheetUrl, mesVista, l.fila, {
+        categoria: edLinea.categoria, cliente: edLinea.cliente.trim(), producto: prod.nombre, unidades: Number(edLinea.unidades),
+      });
+      setEditandoLinea(null);
+      refrescar();
+    } catch (e) { setErrorLinea(e.message); }
+    setGuardandoLinea(false);
+  };
+
+  const anularLinea = async (l) => {
+    if (!intentarTocarLinea(l)) return;
+    if (!confirm(`¿Anular el pedido de ${l.producto} × ${l.unidades} para ${l.cliente}?`)) return;
+    try { await sheets.anularPedidoSheet(vendor.sheetUrl, mesVista, l.fila); refrescar(); }
+    catch (e) { alert(e.message); }
+  };
 
   const guardarPedido = async () => {
     setError("");
@@ -779,8 +823,39 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                               </div>
                               {g.lineas.map((l) => (
                                 <div key={l.fila}>
-                                  <div className="ec-linea"><span>{l.producto} × {l.unidades} {l.estado === "DESPACHADO" ? "✓" : l.estado === "EN PROCESO" ? "⏳" : ""}</span><span>{fmtMoney(l.total)}</span></div>
-                                  {l.faltante && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Producto faltante: {l.producto}</div>}
+                                  {editandoLinea === l.fila ? (
+                                    <div style={{ margin: "8px 0", padding: 10, background: TOKENS.cream, borderRadius: 8 }}>
+                                      <div className="ec-field"><label>Categoría</label>
+                                        <select value={edLinea.categoria} onChange={(e) => setEdLinea({ ...edLinea, categoria: e.target.value })}>
+                                          {db.CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                      </div>
+                                      <div className="ec-field"><label>Cliente</label><input value={edLinea.cliente} onChange={(e) => setEdLinea({ ...edLinea, cliente: e.target.value })} /></div>
+                                      <div className="ec-field"><label>Producto</label>
+                                        <ProductPicker products={products} value={edLinea.productoId} onChange={(v) => setEdLinea({ ...edLinea, productoId: v })} placeholder="Escribí para buscar..." />
+                                      </div>
+                                      <div className="ec-field"><label>Unidades</label><input type="number" min="1" value={edLinea.unidades} onChange={(e) => setEdLinea({ ...edLinea, unidades: e.target.value })} /></div>
+                                      {errorLinea && <div className="ec-error">{errorLinea}</div>}
+                                      <div className="ec-row-actions">
+                                        <button className="ec-btn ec-btn-primary" disabled={guardandoLinea} onClick={() => guardarEdicionLinea(l)}>
+                                          {guardandoLinea ? <Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check size={14} />} Guardar
+                                        </button>
+                                        <button className="ec-btn ec-btn-ghost" onClick={() => setEditandoLinea(null)}>Cancelar</button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <div className="ec-linea">
+                                        <span>{l.producto} × {l.unidades} {l.estado === "DESPACHADO" ? "✓" : l.estado === "EN PROCESO" ? "⏳" : ""}</span>
+                                        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                          {fmtMoney(l.total)}
+                                          <button type="button" onClick={() => empezarEdicion(l)} style={{ background: "none", border: "none", cursor: "pointer", color: TOKENS.textSoft, padding: 0 }} aria-label="Editar"><Pencil size={13} /></button>
+                                          <button type="button" onClick={() => anularLinea(l)} style={{ background: "none", border: "none", cursor: "pointer", color: TOKENS.danger, padding: 0 }} aria-label="Anular"><X size={14} /></button>
+                                        </span>
+                                      </div>
+                                      {l.faltante && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Producto faltante: {l.producto}</div>}
+                                    </>
+                                  )}
                                 </div>
                               ))}
                               <div className="ec-subtotal"><span>Subtotal</span><span>{fmtMoney(subtotal)}</span></div>
