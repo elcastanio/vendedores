@@ -19,84 +19,127 @@ function fmt(n) {
   return "$" + Number(n || 0).toLocaleString("es-AR", { maximumFractionDigits: 0 });
 }
 
+// Paleta acorde a la app (TOKENS)
+const RUST = [181, 84, 42];
+const TEXT = [43, 33, 21];
+const TEXT_SOFT = [110, 98, 80];
+const CREAM = [246, 241, 228];
+const BORDER = [217, 206, 183];
+
+// Dibuja un tilde chiquito dentro de un cuadrado, como en un ticket de
+// "picking" — la referencia visual que pidió Mati.
+function dibujarCheck(doc, x, y) {
+  doc.setDrawColor(...RUST);
+  doc.setLineWidth(1.1);
+  doc.roundedRect(x, y - 8, 10, 10, 2, 2, "S");
+  doc.line(x + 2, y - 3, x + 4.2, y - 0.5);
+  doc.line(x + 4.2, y - 0.5, x + 8, y - 6);
+}
+
 // Genera y descarga un PDF tipo comprobante con el detalle de un pedido
 // (un cliente, un día), para que el vendedor se lo pueda mandar a su cliente.
 export async function descargarComprobantePedido({ vendorNombre, cliente, dia, mesNombre, lineas }) {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const margen = 40;
-  let y = margen;
+  const pageW = 595;
+  const boxX = 56, boxW = pageW - boxX * 2;
+  const boxTop = 56;
 
+  // Marco punteado alrededor de todo el comprobante.
+  doc.setDrawColor(...BORDER);
+  doc.setLineWidth(1);
+  doc.setLineDashPattern([2.5, 2], 0);
+  const boxBottomEstimado = boxTop + 264 + lineas.length * 24;
+  doc.roundedRect(boxX, boxTop, boxW, boxBottomEstimado - boxTop, 10, 10, "S");
+  doc.setLineDashPattern([], 0);
+
+  const padX = boxX + 26;
+  const rightX = boxX + boxW - 26;
+  let y = boxTop + 40;
+
+  // Logo arriba a la derecha, chiquito, como una marca de agua elegante.
   try {
     const logo = await cargarLogo();
-    doc.addImage(logo, "PNG", margen, y, 130, 32);
-  } catch (e) {
-    // Si por algún motivo no se puede cargar el logo, seguimos sin él.
-  }
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(12);
-  doc.setTextColor(110, 98, 80);
-  doc.text(`× ${vendorNombre}`, margen, y + 52);
+    const w = 92, h = 22;
+    doc.addImage(logo, "PNG", rightX - w, boxTop + 18, w, h);
+  } catch (e) { /* seguimos sin logo si no se pudo cargar */ }
 
-  y += 90;
-  doc.setDrawColor(217, 206, 183);
-  doc.line(margen, y, 555 - margen, y);
-  y += 28;
-
-  doc.setFontSize(16);
-  doc.setTextColor(43, 33, 21);
   doc.setFont("helvetica", "bold");
-  doc.text("Comprobante de pedido", margen, y);
-  y += 22;
+  doc.setFontSize(17);
+  doc.setTextColor(...TEXT);
+  doc.text(`Pedido para ${cliente}`, padX, y);
+  y += 18;
 
-  doc.setFontSize(11);
   doc.setFont("helvetica", "normal");
-  doc.setTextColor(60, 50, 38);
-  doc.text(`Cliente: ${cliente}`, margen, y);
-  y += 16;
-  doc.text(`Fecha: Día ${dia} de ${mesNombre}`, margen, y);
-  y += 28;
+  doc.setFontSize(10.5);
+  doc.setTextColor(...TEXT_SOFT);
+  doc.text(`Realizado el día ${dia} de ${mesNombre}`, padX, y);
+  y += 26;
+
+  doc.setDrawColor(...BORDER);
+  doc.setLineWidth(0.75);
+  doc.line(padX, y, rightX, y);
+  y += 22;
 
   // Encabezado de la tabla
-  const colProducto = margen, colUnidades = 330, colPrecio = 400, colTotal = 480;
+  const colCheck = padX, colProducto = padX + 20, colCant = rightX - 210, colPrecio = rightX - 125, colTotal = rightX - 45;
   doc.setFont("helvetica", "bold");
-  doc.setFillColor(43, 33, 21);
-  doc.rect(margen, y - 14, 555 - margen * 2, 22, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.text("Producto", colProducto + 6, y + 2);
-  doc.text("Unid.", colUnidades, y + 2);
-  doc.text("Precio", colPrecio, y + 2);
-  doc.text("Total", colTotal, y + 2);
+  doc.setFontSize(9.5);
+  doc.setTextColor(...TEXT_SOFT);
+  doc.text("PRODUCTO", colProducto, y);
+  doc.text("CANT.", colCant, y, { align: "right" });
+  doc.text("PRECIO UNIT.", colPrecio, y, { align: "right" });
+  doc.text("TOTAL", colTotal, y, { align: "right" });
+  y += 12;
+  doc.setDrawColor(...BORDER);
+  doc.line(padX, y, rightX, y);
+  y += 20;
+
+  let total = 0, unidades = 0;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10.5);
+  lineas.forEach((l) => {
+    if (y > 740) { doc.addPage(); y = 56; }
+    dibujarCheck(doc, colCheck, y);
+    doc.setTextColor(...TEXT);
+    const nombre = doc.splitTextToSize(l.producto, colCant - colProducto - 16)[0];
+    doc.text(nombre, colProducto, y);
+    doc.text(String(l.unidades), colCant, y, { align: "right" });
+    doc.text(fmt(l.precio), colPrecio, y, { align: "right" });
+    doc.setFont("helvetica", "bold");
+    doc.text(fmt(l.total), colTotal, y, { align: "right" });
+    doc.setFont("helvetica", "normal");
+    total += Number(l.total || 0);
+    unidades += Number(l.unidades || 0);
+    y += 24;
+  });
+
+  y += 4;
+  doc.setDrawColor(...BORDER);
+  doc.line(padX, y, rightX, y);
   y += 22;
 
   doc.setFont("helvetica", "normal");
-  doc.setTextColor(43, 33, 21);
-  let total = 0;
-  lineas.forEach((l, i) => {
-    if (y > 760) { doc.addPage(); y = margen; }
-    if (i % 2 === 1) { doc.setFillColor(246, 241, 228); doc.rect(margen, y - 14, 555 - margen * 2, 20, "F"); }
-    const nombre = doc.splitTextToSize(l.producto, 270)[0];
-    doc.text(nombre, colProducto + 6, y);
-    doc.text(String(l.unidades), colUnidades, y);
-    doc.text(fmt(l.precio), colPrecio, y);
-    doc.text(fmt(l.total), colTotal, y);
-    total += Number(l.total || 0);
-    y += 20;
-  });
-
-  y += 10;
-  doc.setDrawColor(217, 206, 183);
-  doc.line(margen, y, 555 - margen, y);
+  doc.setFontSize(10.5);
+  doc.setTextColor(...TEXT_SOFT);
+  doc.text(`Subtotal (${unidades} ${unidades === 1 ? "unidad" : "unidades"})`, padX, y);
+  doc.setTextColor(...TEXT);
+  doc.text(fmt(total), rightX, y, { align: "right" });
   y += 24;
+
+  doc.setFillColor(...CREAM);
+  doc.roundedRect(padX - 10, y - 16, boxW - 32, 30, 5, 5, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
-  doc.text("Total del pedido", colPrecio - 40, y);
-  doc.text(fmt(total), colTotal, y);
+  doc.setTextColor(...RUST);
+  doc.text("Total", padX, y + 4);
+  doc.text(fmt(total), rightX, y + 4, { align: "right" });
+  y += 46;
 
-  y += 50;
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(110, 98, 80);
-  doc.text("¡Gracias por tu compra!", margen, y);
+  doc.setFontSize(9.5);
+  doc.setTextColor(...TEXT_SOFT);
+  doc.text("¡Gracias por tu compra!", padX, y);
+  doc.text(`El Castaño × ${vendorNombre}`, rightX, y, { align: "right" });
 
   const nombreArchivo = `Pedido ${cliente} - Dia ${dia} ${mesNombre}.pdf`.replace(/[\\/:*?"<>|]/g, "");
   doc.save(nombreArchivo);
