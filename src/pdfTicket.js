@@ -142,5 +142,28 @@ export async function descargarComprobantePedido({ vendorNombre, cliente, dia, m
   doc.text(`El Castaño × ${vendorNombre}`, rightX, y, { align: "right" });
 
   const nombreArchivo = `Pedido ${cliente} - Dia ${dia} ${mesNombre}.pdf`.replace(/[\\/:*?"<>|]/g, "");
-  doc.save(nombreArchivo);
+  const blob = doc.output("blob");
+
+  // En el celu, mejor usar el botón nativo de compartir con el PDF
+  // adjunto directo (sin texto ni link) — así en WhatsApp llega el
+  // archivo solo, no un link temporal que no funciona.
+  const archivo = new File([blob], nombreArchivo, { type: "application/pdf" });
+  if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+    try {
+      await navigator.share({ files: [archivo] });
+      return;
+    } catch (e) {
+      if (e && e.name === "AbortError") return; // el vendedor cerró el panel de compartir
+      // si falla por otro motivo, seguimos con la descarga de abajo
+    }
+  }
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nombreArchivo;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
