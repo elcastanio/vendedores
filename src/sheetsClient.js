@@ -101,3 +101,16 @@ export async function guardarDespachoSheet(sheetUrl, { mes, semana, cajas, nota 
   const sheetId = extraerSheetId(sheetUrl);
   return llamar("guardarDespacho", { sheetId, mes, semana, cajas, nota });
 }
+
+// El vendedor edita o anula un pedido PROPIO que todavía esté en PENDIENTE.
+// El script revisa el estado real antes de aplicar el cambio; si ya no está
+// en PENDIENTE, devuelve un mensaje para avisarle que hable con admin.
+export async function editarPedidoSheet(sheetUrl, mes, fila, { categoria, cliente, producto, unidades }) {
+  const sheetId = extraerSheetId(sheetUrl);
+  return llamar("editarPedido", { sheetId, mes, fila, categoria, cliente, producto, unidades });
+}
+
+export async function anularPedidoSheet(sheetUrl, mes, fila) {
+  const sheetId = extraerSheetId(sheetUrl);
+  return llamar("anularPedido", { sheetId, mes, fila });
+}
