@@ -26,6 +26,10 @@ function GlobalStyle() {
       body { font-family: 'Work Sans', sans-serif; color: ${TOKENS.text}; background: ${TOKENS.bg}; }
       .ec-serif { font-family: 'Fraunces', serif; }
       .ec-shell { max-width: 460px; margin: 0 auto; min-height: 100vh; background: ${TOKENS.bg}; display: flex; flex-direction: column; position: relative; }
+      @media (min-width: 640px) {
+        body { background: ${TOKENS.border}; }
+        .ec-shell { max-width: 560px; min-height: calc(100vh - 64px); margin: 32px auto; border-radius: 18px; box-shadow: 0 18px 50px rgba(43,33,21,0.14); border: 1px solid ${TOKENS.border}; overflow: hidden; }
+      }
       .ec-admin-shell { max-width: 1000px; margin: 0 auto; min-height: 100vh; background: ${TOKENS.bg}; display: flex; flex-direction: column; }
       .ec-topbar { padding: 22px 20px 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid ${TOKENS.border}; }
       .ec-brand { font-size: 20px; font-weight: 600; letter-spacing: 0.2px; }
