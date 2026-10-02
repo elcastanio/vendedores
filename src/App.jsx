@@ -1156,7 +1156,23 @@ function EquipoTab({ vendor, mesRealNombre, mesRealClave }) {
       ) : info.miembros.length === 0 ? (
         <div className="ec-empty">Todavía no hay nadie cargado en tu equipo.</div>
       ) : (
-        info.miembros.map((m, i) => {
+        <>
+          {(() => {
+            const ventasEquipo = info.miembros.reduce((acc, m) => acc + (typeof m.ventas === "number" ? m.ventas : 0), 0);
+            const objetivoEquipo = info.miembros.reduce((acc, m) => acc + (typeof m.objetivo === "number" ? m.objetivo : 0), 0);
+            const pctEquipo = objetivoEquipo > 0 ? Math.min(100, Math.round((ventasEquipo / objetivoEquipo) * 100)) : 0;
+            const restanteEquipo = Math.max(0, objetivoEquipo - ventasEquipo);
+            return (
+              <div className="ec-card" style={{ background: TOKENS.cream, marginBottom: 14 }}>
+                <div className="label" style={{ marginBottom: 6 }}>AVANCE DEL EQUIPO — {nombreSolapaSel.toUpperCase()}</div>
+                <div className="ec-big-num">{fmtMoney(ventasEquipo)}</div>
+                <div className="ec-sub" style={{ marginBottom: 10 }}>vendido entre todo el equipo sobre una meta conjunta de {fmtMoney(objetivoEquipo)}</div>
+                <div className="ec-progress-track"><div className="ec-progress-fill" style={{ width: `${pctEquipo}%` }} /></div>
+                <div className="ec-sub" style={{ marginTop: 8 }}>{pctEquipo}% cumplido{restanteEquipo > 0 ? ` · falta ${fmtMoney(restanteEquipo)}` : ""}</div>
+              </div>
+            );
+          })()}
+          {info.miembros.map((m, i) => {
           const ventasNum = typeof m.ventas === "number" ? m.ventas : 0;
           const objetivoNum = typeof m.objetivo === "number" ? m.objetivo : 0;
           const pct = objetivoNum > 0 ? Math.min(100, Math.round((ventasNum / objetivoNum) * 100)) : 0;
@@ -1172,7 +1188,8 @@ function EquipoTab({ vendor, mesRealNombre, mesRealClave }) {
               <div className="ec-sub">Rendiciones: {valorEquipo(m.rendiciones)}</div>
             </div>
           );
-        })
+          })}
+        </>
       )}
     </div>
   );
