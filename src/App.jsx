@@ -344,12 +344,14 @@ function VendorApp({ vendor, products, onLogout }) {
         {tab === "avisos" && <AvisosTab avisos={avisos} abierto={avisoAbierto} setAbierto={setAvisoAbierto} onLeerTodos={leerTodos} onIrAPedidos={() => setTab("pedidos")} />}
         {tab === "pedidos" && <PedidosTab vendor={vendor} products={products} pedidos={pedidosMes} loadError={pedidosError} onChanged={cargarPedidosMes} mesReal={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "objetivo" && <ObjetivoTab vendor={vendor} pedidos={pedidosMes} loadError={pedidosError} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
+        {tab === "equipo" && <EquipoTab vendor={vendor} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "stock" && <StockTab vendor={vendor} products={products} stock={stock} loadError={stockError} onChanged={cargarStock} />}
         {tab === "rendiciones" && <RendicionesTab vendor={vendor} rendiciones={rendiciones} error={rendicionesError} onChanged={cargarRendiciones} />}
       </div>
       <div className="ec-tabbar">
         <TabBtn active={tab === "pedidos"} onClick={() => setTab("pedidos")} icon={<ClipboardList size={17} />} label="Pedidos" />
         <TabBtn active={tab === "objetivo"} onClick={() => setTab("objetivo")} icon={<Target size={17} />} label="Objetivo" />
+        <TabBtn active={tab === "equipo"} onClick={() => setTab("equipo")} icon={<Users size={17} />} label="Equipo" />
         <TabBtn active={tab === "stock"} onClick={() => setTab("stock")} icon={<Package size={17} />} label="Stock" />
         <TabBtn active={tab === "rendiciones"} onClick={() => setTab("rendiciones")} icon={<Wallet size={17} />} label="Rendiciones" />
 
@@ -1045,7 +1047,8 @@ function ObjetivoTab({ vendor, pedidos, loadError, mesRealNombre, mesRealClave }
     comisionMinorista = minoristaComercio * baseComision;
     escalon = "sin objetivo";
   }
-  const comisionTotal = comisionMinorista + comisionMayorista;
+  const bonoEquipo = objetivoInfo.equipoBonus || 0;
+  const comisionTotal = comisionMinorista + comisionMayorista + bonoEquipo;
 
   const pct = objetivo > 0 ? Math.min(100, Math.round((minoristaComercio / objetivo) * 100)) : 0;
   const restante = Math.max(0, objetivo - minoristaComercio);
@@ -1098,10 +1101,79 @@ function ObjetivoTab({ vendor, pedidos, loadError, mesRealNombre, mesRealClave }
         <div className="ec-summary-item"><div className="label">COMISIÓN MINORISTA/COMERCIO</div><div className="value">{fmtMoney(comisionMinorista)}</div></div>
         <div className="ec-summary-item"><div className="label">COMISIÓN MAYORISTA/GRANEL</div><div className="value">{fmtMoney(comisionMayorista)}</div></div>
       </div>
+      {objetivoInfo.equipoBonus !== null && objetivoInfo.equipoBonus !== undefined && (
+        <div className="ec-summary-item" style={{ marginTop: 10 }}>
+          <div className="label">BONO DE EQUIPO</div>
+          <div className="value">{fmtMoney(bonoEquipo)}</div>
+        </div>
+      )}
       <div className="ec-summary-item" style={{ marginTop: 10 }}>
         <div className="label">TU COMISIÓN TOTAL DE {nombreSolapaSel.toUpperCase()}</div>
         <div className="value">{fmtMoney(comisionTotal)}</div>
       </div>
+    </div>
+  );
+}
+
+// Muestra un valor de la solapa Equipo tal cual viene: si es un número, con
+// formato de plata; si es texto ("–", "OBJETIVO LOGRADO 👏", etc.), tal cual.
+function valorEquipo(v) {
+  if (typeof v === "number") return fmtMoney(v);
+  const s = String(v || "").trim();
+  return s === "" ? "–" : s;
+}
+
+function EquipoTab({ vendor, mesRealNombre, mesRealClave }) {
+  const [mesSel, setMesSel] = useState(mesRealClave);
+  const [info, setInfo] = useState(null);
+  const [error, setError] = useState("");
+  const nombreSolapaSel = sheets.nombreMesDeValor(mesSel);
+
+  useEffect(() => {
+    if (!vendor.sheetUrl) return;
+    setInfo(null);
+    setError("");
+    (async () => {
+      try { setInfo(await sheets.fetchEquipoDesdeSheet(vendor.sheetUrl, nombreSolapaSel)); }
+      catch (e) { setError(e.message); }
+    })();
+  }, [vendor.sheetUrl, nombreSolapaSel]);
+
+  if (!vendor.sheetUrl) return null;
+
+  return (
+    <div className="ec-card">
+      <h3><Users size={16} /> Mi equipo</h3>
+      <div style={{ maxWidth: 220, marginBottom: 16 }}><MesField label="Mes a consultar" value={mesSel} onChange={setMesSel} /></div>
+      {error ? (
+        <div className="ec-error">{error}</div>
+      ) : info === null ? (
+        <Spinner label="Cargando tu equipo..." />
+      ) : !info.tieneEquipo ? (
+        <div className="ec-empty">No tenés un equipo a cargo.</div>
+      ) : info.error ? (
+        <div className="ec-error">{info.error}</div>
+      ) : info.miembros.length === 0 ? (
+        <div className="ec-empty">Todavía no hay nadie cargado en tu equipo.</div>
+      ) : (
+        info.miembros.map((m, i) => {
+          const ventasNum = typeof m.ventas === "number" ? m.ventas : 0;
+          const objetivoNum = typeof m.objetivo === "number" ? m.objetivo : 0;
+          const pct = objetivoNum > 0 ? Math.min(100, Math.round((ventasNum / objetivoNum) * 100)) : 0;
+          return (
+            <div className="ec-pedido-row" key={i}>
+              <div className="ec-pedido-cliente">{m.nombre}</div>
+              <div className="ec-summary-grid" style={{ marginTop: 10 }}>
+                <div className="ec-summary-item"><div className="label">VENTAS DE {nombreSolapaSel.toUpperCase()}</div><div className="value">{valorEquipo(m.ventas)}</div></div>
+                <div className="ec-summary-item"><div className="label">OBJETIVO</div><div className="value">{valorEquipo(m.objetivo)}</div></div>
+              </div>
+              {objetivoNum > 0 && <div className="ec-progress-track" style={{ marginTop: 10 }}><div className="ec-progress-fill" style={{ width: `${pct}%` }} /></div>}
+              <div className="ec-sub" style={{ marginTop: 8 }}>Restante para el objetivo: {valorEquipo(m.restante)}</div>
+              <div className="ec-sub">Rendiciones: {valorEquipo(m.rendiciones)}</div>
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
