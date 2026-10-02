@@ -87,11 +87,18 @@ export async function updateStockEstadoSheet(sheetUrl, fila, estado) {
   return llamar("updateStockEstado", { sheetId, fila, estado });
 }
 
-// Lee el objetivo de un mes puntual, directo de la solapa "Panel de
-// control" de la propia planilla del vendedor.
+// Lee el objetivo (y, si el vendedor lidera un equipo, el bono de equipo)
+// de un mes puntual, directo de la solapa "Panel de control".
 export async function fetchObjetivoDesdeSheet(sheetUrl, mes) {
   const sheetId = extraerSheetId(sheetUrl);
   return llamar("fetchObjetivoSheet", { sheetId, mes });
+}
+
+// Lee el detalle de cada integrante del equipo (solapa "Equipo") para un
+// mes puntual. Si el vendedor no lidera un equipo, tieneEquipo viene en false.
+export async function fetchEquipoDesdeSheet(sheetUrl, mes) {
+  const sheetId = extraerSheetId(sheetUrl);
+  return llamar("fetchEquipo", { sheetId, mes });
 }
 
 
