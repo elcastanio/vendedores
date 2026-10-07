@@ -693,6 +693,12 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
   const [pedidosPropios, setPedidosPropios] = useState(null);
   const [errorPropio, setErrorPropio] = useState("");
 
+  // Avisa a la actualización automática que hay algo a medias (no recargar en este momento).
+  useEffect(() => {
+    window.__ecOcupado = carrito.length > 0 || cliente.trim() !== "" || editandoLinea !== null;
+    return () => { window.__ecOcupado = false; };
+  }, [carrito, cliente, editandoLinea]);
+
   const mesActual = sheets.mesDeFecha(fecha); // mes al que se escribe el pedido nuevo
   const mesVista = sheets.nombreMesDeValor(mesConsulta); // mes que se muestra en la lista de abajo
   const esMesVistaReal = mesVista === mesReal;
@@ -762,6 +768,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
     try {
       await sheets.editarPedidoSheet(vendor.sheetUrl, mesVista, l.fila, {
         categoria: edLinea.categoria, cliente: edLinea.cliente.trim(), producto: prod.nombre, unidades: Number(edLinea.unidades),
+        clienteAnterior: l.cliente, productoAnterior: l.producto,
       });
       setEditandoLinea(null);
       refrescar();
@@ -772,7 +779,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
   const anularLinea = async (l) => {
     if (!intentarTocarLinea(l)) return;
     if (!confirm(`¿Anular el pedido de ${l.producto} × ${l.unidades} para ${l.cliente}?`)) return;
-    try { await sheets.anularPedidoSheet(vendor.sheetUrl, mesVista, l.fila); refrescar(); }
+    try { await sheets.anularPedidoSheet(vendor.sheetUrl, mesVista, l.fila, { cliente: l.cliente, producto: l.producto }); refrescar(); }
     catch (e) {
       // "Load failed" / "Failed to fetch": se cortó la conexión pero la planilla suele haberlo borrado.
       // Se vuelve a leer la planilla para mostrar el estado real, sin alarmar.
@@ -2087,6 +2094,54 @@ function AppInner() {
   );
 }
 
+// Mantiene la app al día. Cuando hay una versión nueva:
+//  - si no hay nada a medias (pedido en carga o edición), se actualiza sola al volver a abrirla;
+//  - si hay algo a medias, muestra un cartel para actualizar cuando el vendedor quiera.
+// Si no toca el cartel, la versión nueva se aplica igual la próxima vez que abra la app de cero.
+function useActualizacionAutomatica() {
+  const [hayNueva, setHayNueva] = useState(false);
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    let nueva = false;
+    const aplicarSiLibre = () => {
+      if (nueva && !window.__ecOcupado) window.location.reload();
+    };
+    const alCambiarControlador = () => {
+      if (!navigator.serviceWorker.controller || nueva) return;
+      nueva = true;
+      setHayNueva(true);
+      if (document.visibilityState === "hidden") aplicarSiLibre();
+    };
+    navigator.serviceWorker.addEventListener("controllerchange", alCambiarControlador);
+    const alVolver = () => {
+      if (document.visibilityState !== "visible") return;
+      aplicarSiLibre();
+      navigator.serviceWorker.getRegistration().then((r) => r && r.update()).catch(() => {});
+    };
+    alVolver();
+    document.addEventListener("visibilitychange", alVolver);
+    const intervalo = setInterval(() => {
+      if (document.visibilityState === "visible") navigator.serviceWorker.getRegistration().then((r) => r && r.update()).catch(() => {});
+    }, 30 * 60 * 1000);
+    return () => {
+      navigator.serviceWorker.removeEventListener("controllerchange", alCambiarControlador);
+      document.removeEventListener("visibilitychange", alVolver);
+      clearInterval(intervalo);
+    };
+  }, []);
+  return hayNueva;
+}
+
+function CartelActualizacion() {
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999, background: TOKENS.primary || "#003C69", color: "#fff", padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, fontSize: 14, boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}>
+      <span>Hay una versión nueva de la app</span>
+      <button onClick={() => window.location.reload()} style={{ background: "#fff", color: TOKENS.primary || "#003C69", border: "none", borderRadius: 8, padding: "6px 12px", fontWeight: 600, cursor: "pointer" }}>Actualizar</button>
+    </div>
+  );
+}
+
 export default function App() {
-  return (<ErrorBoundary><AppInner /></ErrorBoundary>);
+  const hayNueva = useActualizacionAutomatica();
+  return (<ErrorBoundary>{hayNueva && <CartelActualizacion />}<AppInner /></ErrorBoundary>);
 }
