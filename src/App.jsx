@@ -560,6 +560,8 @@ function AvisosTab({ avisos, abierto, setAbierto, onLeerTodos, onIrAPedidos, dat
           const despachoVivo = hayEnVivo ? (datos.despachos || []).find((d) => d.semana === a.semana && d.mes.toLowerCase() === (a.mes || "").toLowerCase()) : null;
           const cajas = hayEnVivo ? (despachoVivo && despachoVivo.cajas ? despachoVivo.cajas : null) : a.cajas;
           const faltantes = hayEnVivo ? faltantesDeDespacho(datos, fechaDesp) : a.faltantes;
+          // Si el despacho ya no existe en la planilla (se deshizo), el aviso no se muestra.
+          if (nuevoFormato && datos && !hayEnVivo) return null;
           return (
             <div className="ec-card" key={a.id} style={!a.leida ? { borderColor: TOKENS.rust } : undefined}>
               <div className="ec-pedido-top" style={{ cursor: "pointer" }} onClick={() => setAbierto(abiertoEste ? null : a.id)}>
