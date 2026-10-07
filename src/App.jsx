@@ -13,8 +13,8 @@ import { soportaPush, suscribirVendedor, yaEstaSuscripto, registrarSiYaSuscripto
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "castano2026";
 
 const TOKENS = {
-  bg: "#EFE9DC", surface: "#FFFDF8", border: "#D9CEB7", text: "#2B2115", textSoft: "#6E6250",
-  olive: "#6B7A3D", oliveDark: "#4F5C2A", rust: "#B5542A", rustDark: "#8E3F1D", danger: "#A13A2E", cream: "#F6F1E4",
+  bg: "#F5F8FC", surface: "#FFFFFF", border: "#DAE2EC", text: "#14253A", textSoft: "#5A6B7E",
+  olive: "#003C69", oliveDark: "#002B4C", rust: "#0B5CA3", rustDark: "#003C69", danger: "#B3342A", cream: "#EDF3F9",
 };
 
 function GlobalStyle() {
@@ -28,7 +28,7 @@ function GlobalStyle() {
       .ec-shell { max-width: 460px; margin: 0 auto; min-height: 100vh; background: ${TOKENS.bg}; display: flex; flex-direction: column; position: relative; }
       @media (min-width: 640px) {
         body { background: ${TOKENS.border}; }
-        .ec-shell { max-width: 900px; min-height: calc(100vh - 64px); margin: 32px auto; border-radius: 18px; box-shadow: 0 18px 50px rgba(43,33,21,0.14); border: 1px solid ${TOKENS.border}; overflow: hidden; }
+        .ec-shell { max-width: 900px; min-height: calc(100vh - 64px); margin: 32px auto; border-radius: 18px; box-shadow: 0 18px 50px rgba(0,60,105,0.12); border: 1px solid ${TOKENS.border}; overflow: hidden; }
         .ec-pedidos-grid { display: grid; grid-template-columns: minmax(300px, 360px) 1fr; gap: 20px; align-items: start; }
       }
       .ec-admin-shell { max-width: 1000px; margin: 0 auto; min-height: 100vh; background: ${TOKENS.bg}; display: flex; flex-direction: column; }
@@ -71,14 +71,14 @@ function GlobalStyle() {
       .ec-linea { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; border-top: 1px dashed ${TOKENS.border}; }
       .ec-subtotal { display: flex; justify-content: space-between; font-size: 13.5px; font-weight: 600; padding-top: 6px; margin-top: 4px; border-top: 1px solid ${TOKENS.border}; }
       .ec-badge { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
-      .ec-badge-pend { background: #F0E6CE; color: #8A6A21; }
-      .ec-badge-proceso { background: #E8D6C4; color: ${TOKENS.rustDark}; }
-      .ec-badge-desp { background: #E1E8D2; color: ${TOKENS.oliveDark}; }
-      .ec-badge-a { background: #E1E8D2; color: ${TOKENS.oliveDark}; }
-      .ec-badge-b { background: #F0E6CE; color: #8A6A21; }
-      .ec-badge-c { background: #F5E2DC; color: ${TOKENS.rustDark}; }
+      .ec-badge-pend { background: #FDF0D2; color: #8A6A21; }
+      .ec-badge-proceso { background: #DCEAF7; color: ${TOKENS.rustDark}; }
+      .ec-badge-desp { background: #DDF1E4; color: #1E6B3C; }
+      .ec-badge-a { background: #DDF1E4; color: #1E6B3C; }
+      .ec-badge-b { background: #FDF0D2; color: #8A6A21; }
+      .ec-badge-c { background: #FBE4E1; color: #9A2E25; }
       .ec-note { margin-top: 7px; font-size: 12.5px; padding: 7px 9px; border-radius: 6px; background: ${TOKENS.cream}; }
-      .ec-note.warn { background: #F5E2DC; color: ${TOKENS.rustDark}; }
+      .ec-note.warn { background: #FBE4E1; color: #9A2E25; }
       .ec-tabbar { position: sticky; bottom: 0; display: flex; border-top: 1px solid ${TOKENS.border}; background: ${TOKENS.surface}; }
       .ec-tab { flex: 1; border: none; background: transparent; padding: 10px 4px 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; font-family: inherit; font-size: 10.5px; font-weight: 600; color: ${TOKENS.textSoft}; cursor: pointer; }
       .ec-tab.active { color: ${TOKENS.rust}; }
@@ -93,7 +93,7 @@ function GlobalStyle() {
       .ec-table th { text-align: left; font-size: 12px; color: ${TOKENS.textSoft}; padding: 6px 8px; border-bottom: 1px solid ${TOKENS.border}; white-space: nowrap; }
       .ec-table td { padding: 7px 8px; border-bottom: 1px solid ${TOKENS.border}; font-size: 13.5px; vertical-align: top; }
       .ec-error { color: ${TOKENS.danger}; font-size: 13px; margin-top: 8px; }
-      .ec-ok { color: ${TOKENS.oliveDark}; font-size: 13px; margin-top: 8px; }
+      .ec-ok { color: #1E6B3C; font-size: 13px; margin-top: 8px; }
       .ec-empty { text-align: center; color: ${TOKENS.textSoft}; font-size: 13.5px; padding: 30px 10px; }
       .ec-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
       .ec-select-inline { padding: 5px 7px; border-radius: 6px; border: 1px solid ${TOKENS.border}; font-family: inherit; font-size: 12.5px; }
@@ -466,7 +466,7 @@ function ProductPicker({ products, value, onChange, placeholder }) {
         <div style={{
           position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20,
           background: "#fff", border: `1px solid ${TOKENS.border}`, borderRadius: 8,
-          maxHeight: 220, overflowY: "auto", marginTop: 4, boxShadow: "0 6px 16px rgba(43,33,21,0.12)",
+          maxHeight: 220, overflowY: "auto", marginTop: 4, boxShadow: "0 6px 16px rgba(0,60,105,0.12)",
         }}>
           {filtrados.length === 0 ? (
             <div style={{ padding: "10px 12px", fontSize: 13, color: TOKENS.textSoft }}>Sin resultados</div>
