@@ -291,7 +291,7 @@ function VendorApp({ vendor, products, onLogout }) {
   // Al ver los avisos se leen de la planilla los meses a los que se refieren,
   // para mostrar cajas y faltantes actualizados.
   const mesesAvisosKey = useMemo(
-    () => Array.from(new Set(avisos.filter((a) => a.semana && a.semana.indexOf("D:") === 0 && a.mes).map((a) => a.mes))).join("|"),
+    () => Array.from(new Set(avisos.filter((a) => a.mes).map((a) => a.mes))).join("|"),
     [avisos]
   );
   useEffect(() => {
@@ -553,11 +553,13 @@ function AvisosTab({ avisos, abierto, setAbierto, onLeerTodos, onIrAPedidos, dat
           const abiertoEste = abierto === a.id;
           // Los avisos de un despacho por fecha muestran cajas y faltantes EN VIVO
           // (de la planilla), así si después cambian el aviso no queda desactualizado.
+          // Los avisos viejos (que traían la semana del pedido) se asocian al despacho
+          // por su fecha, así también se actualizan.
           const nuevoFormato = !!a.semana && a.semana.indexOf("D:") === 0;
-          const datos = nuevoFormato ? datosPorMes[(a.mes || "").toLowerCase()] : null;
-          const fechaDesp = nuevoFormato ? a.semana.slice(2) : "";
-          const hayEnVivo = !!datos && datos.some((l) => l.despachado && l.fechaDespacho === fechaDesp);
-          const despachoVivo = hayEnVivo ? (datos.despachos || []).find((d) => d.semana === a.semana && d.mes.toLowerCase() === (a.mes || "").toLowerCase()) : null;
+          const fechaDesp = nuevoFormato ? a.semana.slice(2) : (a.fechaDespacho || "");
+          const datos = a.mes ? datosPorMes[a.mes.toLowerCase()] : null;
+          const hayEnVivo = !!datos && !!fechaDesp && datos.some((l) => l.despachado && l.fechaDespacho === fechaDesp);
+          const despachoVivo = hayEnVivo ? (datos.despachos || []).find((d) => d.semana === "D:" + fechaDesp && d.mes.toLowerCase() === a.mes.toLowerCase()) : null;
           const cajas = hayEnVivo ? (despachoVivo && despachoVivo.cajas ? despachoVivo.cajas : null) : a.cajas;
           const faltantes = hayEnVivo ? faltantesDeDespacho(datos, fechaDesp) : a.faltantes;
           // Si el despacho ya no existe en la planilla (se deshizo), el aviso no se muestra.
@@ -570,7 +572,7 @@ function AvisosTab({ avisos, abierto, setAbierto, onLeerTodos, onIrAPedidos, dat
                     {!a.leida && <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, background: TOKENS.rust, marginRight: 7 }} />}
                     Pedidos despachados
                   </div>
-                  <div className="ec-pedido-meta">{fmtFechaAviso(a.fechaDespacho)}{!nuevoFormato && a.semanaLabel ? ` · Semana del ${a.semanaLabel}` : ""}</div>
+                  <div className="ec-pedido-meta">{fmtFechaAviso(a.fechaDespacho)}{!nuevoFormato && !hayEnVivo && a.semanaLabel ? ` · Semana del ${a.semanaLabel}` : ""}</div>
                 </div>
                 <ChevronRight size={16} style={{ transform: abiertoEste ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
               </div>
