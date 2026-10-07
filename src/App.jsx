@@ -224,6 +224,7 @@ function VendorApp({ vendor, products, onLogout }) {
   const [avisos, setAvisos] = useState([]);
   const [avisoAbierto, setAvisoAbierto] = useState(null);
   const [datosAvisos, setDatosAvisos] = useState({});
+  const [cargandoAvisos, setCargandoAvisos] = useState(false);
   const mesActualVendor = sheets.mesDeFecha(fechaHoy());
 
   const cargarPedidosMes = useCallback(async () => {
@@ -297,12 +298,15 @@ function VendorApp({ vendor, products, onLogout }) {
   useEffect(() => {
     if (tab !== "avisos" || !vendor.sheetUrl || !mesesAvisosKey) return;
     let cancelado = false;
-    mesesAvisosKey.split("|").forEach(async (mes) => {
+    setCargandoAvisos(true);
+    Promise.all(mesesAvisosKey.split("|").map(async (mes) => {
       try {
         const data = await sheets.fetchPedidosSheet(vendor.sheetUrl, mes);
         if (!cancelado) setDatosAvisos((prev) => ({ ...prev, [mes.toLowerCase()]: data }));
-      } catch (e) {}
-    });
+      } catch (e) {
+        if (!cancelado) setDatosAvisos((prev) => ({ ...prev, [mes.toLowerCase()]: prev[mes.toLowerCase()] || null }));
+      }
+    })).then(() => { if (!cancelado) setCargandoAvisos(false); });
     return () => { cancelado = true; };
   }, [tab, mesesAvisosKey, vendor.sheetUrl]);
 
@@ -366,7 +370,7 @@ function VendorApp({ vendor, products, onLogout }) {
             Todavía no tenés una planilla vinculada. Pedile al administrador que la cargue en tu ficha.
           </div></div>
         )}
-        {tab === "avisos" && <AvisosTab avisos={avisos} abierto={avisoAbierto} setAbierto={setAvisoAbierto} onLeerTodos={leerTodos} onIrAPedidos={() => setTab("pedidos")} onEliminar={eliminarAviso} datosPorMes={datosAvisos} />}
+        {tab === "avisos" && <AvisosTab avisos={avisos} abierto={avisoAbierto} setAbierto={setAvisoAbierto} onLeerTodos={leerTodos} onIrAPedidos={() => setTab("pedidos")} onEliminar={eliminarAviso} datosPorMes={datosAvisos} cargando={cargandoAvisos} />}
         {tab === "pedidos" && <PedidosTab vendor={vendor} products={products} pedidos={pedidosMes} loadError={pedidosError} onChanged={cargarPedidosMes} mesReal={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "objetivo" && <ObjetivoTab vendor={vendor} pedidos={pedidosMes} loadError={pedidosError} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "equipo" && <EquipoTab vendor={vendor} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
@@ -542,7 +546,7 @@ function fmtFechaAviso(iso) {
 }
 
 // Bandeja de avisos del vendedor. Al abrir uno se muestra el detalle.
-function AvisosTab({ avisos, abierto, setAbierto, onLeerTodos, onIrAPedidos, onEliminar, datosPorMes }) {
+function AvisosTab({ avisos, abierto, setAbierto, onLeerTodos, onIrAPedidos, onEliminar, datosPorMes, cargando }) {
   const noLeidos = avisos.filter((a) => !a.leida).length;
   return (
     <>
@@ -585,8 +589,14 @@ function AvisosTab({ avisos, abierto, setAbierto, onLeerTodos, onIrAPedidos, onE
               {abiertoEste && (
                 <div style={{ marginTop: 10, borderTop: `1px solid ${TOKENS.border}`, paddingTop: 10, fontSize: 14, lineHeight: 1.65 }}>
                   <div>Tus pedidos se despacharon el <b>{fmtFechaAviso(a.fechaDespacho)}</b>.</div>
-                  {cajas ? <div>Recibís <b>{cajas} {cajas === 1 ? "caja" : "cajas"}</b>.</div> : null}
-                  <div>{faltantes.length > 0 ? <>Faltante: <b>{faltantes.join(", ")}</b></> : "Sin faltantes."}</div>
+                  {cargando && !!a.mes ? (
+                    <div style={{ color: TOKENS.textSoft }}>Actualizando detalle...</div>
+                  ) : (
+                    <>
+                      {cajas ? <div>Recibís <b>{cajas} {cajas === 1 ? "caja" : "cajas"}</b>.</div> : null}
+                      <div>{faltantes.length > 0 ? <>Faltante: <b>{faltantes.join(", ")}</b></> : "Sin faltantes."}</div>
+                    </>
+                  )}
                   <div style={{ color: TOKENS.textSoft, marginTop: 6 }}>Revisá el detalle de tus pedidos para más información.</div>
                   <div className="ec-row-actions" style={{ marginTop: 12 }}>
                     <button className="ec-btn ec-btn-primary" onClick={onIrAPedidos}>Ver mis pedidos</button>
