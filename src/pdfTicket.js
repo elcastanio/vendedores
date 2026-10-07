@@ -20,11 +20,11 @@ function fmt(n) {
 }
 
 // Paleta acorde a la app (TOKENS)
-const RUST = [181, 84, 42];
-const TEXT = [43, 33, 21];
-const TEXT_SOFT = [110, 98, 80];
-const CREAM = [246, 241, 228];
-const BORDER = [217, 206, 183];
+const RUST = [0, 60, 105];
+const TEXT = [20, 37, 58];
+const TEXT_SOFT = [90, 107, 126];
+const CREAM = [237, 243, 249];
+const BORDER = [218, 226, 236];
 
 // Dibuja un tilde chiquito dentro de un cuadrado, como en un ticket de
 // "picking" — la referencia visual que pidió Mati.
