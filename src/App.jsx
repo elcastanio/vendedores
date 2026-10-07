@@ -115,6 +115,14 @@ function Spinner({ label }) {
   );
 }
 
+// Saludo según la hora en Argentina: día hasta las 12, tarde hasta las 20, noche el resto.
+function saludoSegunHora() {
+  const hora = Number(new Date().toLocaleString("en-GB", { hour: "2-digit", hour12: false, timeZone: "America/Argentina/Buenos_Aires" }).slice(0, 2));
+  if (hora >= 5 && hora < 12) return "Buenos días";
+  if (hora >= 12 && hora < 20) return "Buenas tardes";
+  return "Buenas noches";
+}
+
 function fmtMoney(n) {
   return "$" + Number(n || 0).toLocaleString("es-AR", { maximumFractionDigits: 0 });
 }
@@ -342,7 +350,7 @@ function VendorApp({ vendor, products, onLogout }) {
   return (
     <div className="ec-shell">
       <div className="ec-topbar">
-        <div><img src="/logo.png" alt="El Castaño" style={{ height: 22 }} /><div className="ec-sub" style={{ marginTop: 4 }}>Hola, {vendor.nombre}</div></div>
+        <div><img src="/logo.png" alt="El Castaño" style={{ height: 22 }} /><div className="ec-sub" style={{ marginTop: 4 }}>{saludoSegunHora()}, {vendor.nombre}</div></div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button className="ec-btn ec-btn-ghost" style={{ position: "relative" }} onClick={() => { setTab("avisos"); setAvisoAbierto(null); }} aria-label="Avisos">
             <Bell size={14} />
