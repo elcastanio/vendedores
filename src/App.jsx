@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import {
   ClipboardList, Target, Package, Wallet, LogOut, Plus, Check, X, Loader2,
   ShieldCheck, Users, Boxes, ListChecks, ChevronRight, AlertTriangle, Upload,
-  ExternalLink, RefreshCw, Bell, BellOff, Pencil, FileDown,
+  ExternalLink, RefreshCw, Bell, BellOff, Pencil, FileDown, Trash2,
 } from "lucide-react";
 import * as db from "./db";
 import * as sheets from "./sheetsClient";
@@ -316,6 +316,12 @@ function VendorApp({ vendor, products, onLogout }) {
     }
   }, [avisoAbierto, avisos]);
 
+  const eliminarAviso = async (id) => {
+    setAvisos((prev) => prev.filter((x) => x.id !== id));
+    setAvisoAbierto(null);
+    try { await db.eliminarNotificacion(id); } catch (e) { cargarAvisos(); }
+  };
+
   const leerTodos = () => {
     setAvisos((prev) => prev.map((x) => ({ ...x, leida: true })));
     db.marcarTodasLeidas(vendor.id).catch(() => {});
@@ -360,7 +366,7 @@ function VendorApp({ vendor, products, onLogout }) {
             Todavía no tenés una planilla vinculada. Pedile al administrador que la cargue en tu ficha.
           </div></div>
         )}
-        {tab === "avisos" && <AvisosTab avisos={avisos} abierto={avisoAbierto} setAbierto={setAvisoAbierto} onLeerTodos={leerTodos} onIrAPedidos={() => setTab("pedidos")} datosPorMes={datosAvisos} />}
+        {tab === "avisos" && <AvisosTab avisos={avisos} abierto={avisoAbierto} setAbierto={setAvisoAbierto} onLeerTodos={leerTodos} onIrAPedidos={() => setTab("pedidos")} onEliminar={eliminarAviso} datosPorMes={datosAvisos} />}
         {tab === "pedidos" && <PedidosTab vendor={vendor} products={products} pedidos={pedidosMes} loadError={pedidosError} onChanged={cargarPedidosMes} mesReal={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "objetivo" && <ObjetivoTab vendor={vendor} pedidos={pedidosMes} loadError={pedidosError} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "equipo" && <EquipoTab vendor={vendor} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
@@ -536,7 +542,7 @@ function fmtFechaAviso(iso) {
 }
 
 // Bandeja de avisos del vendedor. Al abrir uno se muestra el detalle.
-function AvisosTab({ avisos, abierto, setAbierto, onLeerTodos, onIrAPedidos, datosPorMes }) {
+function AvisosTab({ avisos, abierto, setAbierto, onLeerTodos, onIrAPedidos, onEliminar, datosPorMes }) {
   const noLeidos = avisos.filter((a) => !a.leida).length;
   return (
     <>
@@ -582,7 +588,12 @@ function AvisosTab({ avisos, abierto, setAbierto, onLeerTodos, onIrAPedidos, dat
                   {cajas ? <div>Recibís <b>{cajas} {cajas === 1 ? "caja" : "cajas"}</b>.</div> : null}
                   <div>{faltantes.length > 0 ? <>Faltante: <b>{faltantes.join(", ")}</b></> : "Sin faltantes."}</div>
                   <div style={{ color: TOKENS.textSoft, marginTop: 6 }}>Revisá el detalle de tus pedidos para más información.</div>
-                  <button className="ec-btn ec-btn-primary" style={{ marginTop: 12 }} onClick={onIrAPedidos}>Ver mis pedidos</button>
+                  <div className="ec-row-actions" style={{ marginTop: 12 }}>
+                    <button className="ec-btn ec-btn-primary" onClick={onIrAPedidos}>Ver mis pedidos</button>
+                    <button className="ec-btn ec-btn-ghost" onClick={() => { if (window.confirm("¿Borrar este aviso?")) onEliminar(a.id); }} aria-label="Borrar aviso">
+                      <Trash2 size={14} /> Borrar
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -612,23 +623,38 @@ function etiquetaDespacho(fecha) {
   const [, m, d] = String(fecha).split("-");
   return `Despacho del ${Number(d)}/${Number(m)}`;
 }
-// Faltantes de un despacho (las líneas que salieron en esa fecha): lo marcado
-// como faltante + lo que sigue sin despachar de esos mismos pedidos.
+// Unidades que faltaron de una línea (columna Faltante: SI = toda la línea, o un número).
+function unidadesFalt(l) {
+  if (l.unidadesFaltantes !== undefined && l.unidadesFaltantes !== null) return Number(l.unidadesFaltantes) || 0;
+  return l.faltante ? Number(l.unidades) || 0 : 0;
+}
+function unidadesEntregadas(l) {
+  return Math.max(0, (Number(l.unidades) || 0) - unidadesFalt(l));
+}
+function sumarFaltante(mapa, producto, n) {
+  if (!producto || !(n > 0)) return;
+  mapa.set(producto, (mapa.get(producto) || 0) + n);
+}
+function textoFaltantes(mapa) {
+  return Array.from(mapa.entries()).map(([p, n]) => `${p} (${n} u.)`);
+}
+// Faltantes de un despacho (las líneas que salieron en esa fecha): lo que faltó
+// (en unidades) + lo que sigue sin despachar de esos mismos pedidos.
 function faltantesDeDespacho(lineasMes, fecha) {
   const delDespacho = lineasMes.filter((l) => l.despachado && l.fechaDespacho === fecha);
   const pedidos = new Set(delDespacho.map((l) => `${l.dia}|${l.cliente}`));
-  const out = [];
-  delDespacho.forEach((l) => { if (l.faltante && out.indexOf(l.producto) === -1) out.push(l.producto); });
+  const m = new Map();
+  delDespacho.forEach((l) => sumarFaltante(m, l.producto, unidadesFalt(l)));
   lineasMes.forEach((l) => {
-    if (!l.despachado && l.producto && pedidos.has(`${l.dia}|${l.cliente}`) && out.indexOf(l.producto) === -1) out.push(l.producto);
+    if (!l.despachado && pedidos.has(`${l.dia}|${l.cliente}`)) sumarFaltante(m, l.producto, Number(l.unidades) || 0);
   });
-  return out;
+  return textoFaltantes(m);
 }
 
 function faltantesDe(lineas) {
-  const out = [];
-  lineas.forEach((l) => { if (l.faltante && out.indexOf(l.producto) === -1) out.push(l.producto); });
-  return out;
+  const m = new Map();
+  lineas.forEach((l) => sumarFaltante(m, l.producto, unidadesFalt(l)));
+  return textoFaltantes(m);
 }
 
 function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, mesRealClave }) {
@@ -738,7 +764,11 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
     setDescargando(clave);
     try {
       await descargarComprobantePedido({
-        vendorNombre: vendor.nombre, cliente: g.cliente, dia: g.dia, mesNombre: mesVista, lineas: g.lineas,
+        vendorNombre: vendor.nombre, cliente: g.cliente, dia: g.dia, mesNombre: mesVista,
+        // El comprobante muestra solo lo entregado: se descuentan las unidades faltantes.
+        lineas: g.lineas
+          .filter((l) => unidadesEntregadas(l) > 0)
+          .map((l) => (unidadesFalt(l) > 0 ? { ...l, unidades: unidadesEntregadas(l), total: unidadesEntregadas(l) * Number(l.precio || 0) } : l)),
       });
     } catch (e) { alert("No se pudo generar el PDF: " + e.message); }
     setDescargando(null);
@@ -816,9 +846,10 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
     const semanasCompletas = Array.from(despachosPorClave.values()).sort((a, b) => b.sort.localeCompare(a.sort)).map((g) => {
       // Faltantes del despacho: lo marcado + lo que falta enviar de esos mismos pedidos.
       const lineasGrupo = g.ordenes.flatMap((o) => o.lineas);
-      const faltantes = faltantesDe(lineasGrupo);
-      g.ordenKeys.forEach((ok) => (pendientesPorPedido.get(ok) || []).forEach((l) => { if (l.producto && faltantes.indexOf(l.producto) === -1) faltantes.push(l.producto); }));
-      return { ...g, faltantes };
+      const m = new Map();
+      lineasGrupo.forEach((l) => sumarFaltante(m, l.producto, unidadesFalt(l)));
+      g.ordenKeys.forEach((ok) => (pendientesPorPedido.get(ok) || []).forEach((l) => sumarFaltante(m, l.producto, Number(l.unidades) || 0)));
+      return { ...g, faltantes: textoFaltantes(m) };
     });
     return { gruposPendientes, semanasCompletas };
   }, [pedidosDelMes, mesConsulta]);
@@ -953,14 +984,14 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                                   ) : (
                                     <>
                                       <div className="ec-linea">
-                                        <span>{l.producto} × {l.unidades} {l.estado === "DESPACHADO" ? "✓" : l.estado === "EN PROCESO" ? "⏳" : ""}</span>
+                                        <span>{l.producto} × {unidadesEntregadas(l)} {l.estado === "DESPACHADO" ? "✓" : l.estado === "EN PROCESO" ? "⏳" : ""}</span>
                                         <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                           {fmtMoney(l.total)}
                                           <button type="button" onClick={() => empezarEdicion(l)} style={{ background: "none", border: "none", cursor: "pointer", color: TOKENS.textSoft, padding: 0 }} aria-label="Editar"><Pencil size={13} /></button>
                                           <button type="button" onClick={() => anularLinea(l)} style={{ background: "none", border: "none", cursor: "pointer", color: TOKENS.danger, padding: 0 }} aria-label="Anular"><X size={14} /></button>
                                         </span>
                                       </div>
-                                      {l.faltante && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Producto faltante: {l.producto}</div>}
+                                      {unidadesFalt(l) > 0 && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Faltan {unidadesFalt(l)} de {l.unidades} u.: {l.producto}</div>}
                                     </>
                                   )}
                                 </div>
@@ -1011,8 +1042,8 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                           </div>
                           {g.lineas.map((l) => (
                             <div key={l.fila}>
-                              <div className="ec-linea"><span>{l.producto} × {l.unidades}</span><span>{fmtMoney(l.total)}</span></div>
-                              {l.faltante && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Producto faltante: {l.producto}</div>}
+                              <div className="ec-linea"><span>{l.producto} × {unidadesEntregadas(l)}</span><span>{fmtMoney(l.total)}</span></div>
+                              {unidadesFalt(l) > 0 && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Faltan {unidadesFalt(l)} de {l.unidades} u.: {l.producto}</div>}
                             </div>
                           ))}
                           <div className="ec-subtotal"><span>Subtotal</span><span>{fmtMoney(subtotal)}</span></div>
@@ -1951,7 +1982,7 @@ function PedidosAdmin({ vendors }) {
                         </div>
                       ) : (
                         <>
-                          {p.faltante && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Producto faltante: {p.producto}</div>}
+                          {unidadesFalt(p) > 0 && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Faltan {unidadesFalt(p)} de {p.unidades} u.: {p.producto}</div>}
                           <button className="ec-btn ec-btn-ghost" style={{ marginTop: 8, padding: "6px 10px" }} onClick={() => startEdit(p)}>Editar estado <ChevronRight size={13} /></button>
                         </>
                       )}
