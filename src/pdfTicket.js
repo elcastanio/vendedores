@@ -192,9 +192,8 @@ export async function armarComprobante({ vendorNombre, cliente, dia, mesNombre, 
   return { doc, nombreArchivo };
 }
 
-// Genera el comprobante y lo comparte o descarga.
-export async function descargarComprobantePedido(datos) {
-  const { doc, nombreArchivo } = await armarComprobante(datos);
+// Comparte (en el celu) o descarga un PDF ya armado.
+async function compartirODescargar(doc, nombreArchivo) {
   const blob = doc.output("blob");
 
   // En el celu, mejor usar el botón nativo de compartir con el PDF
@@ -219,4 +218,250 @@ export async function descargarComprobantePedido(datos) {
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// Genera el comprobante y lo comparte o descarga.
+export async function descargarComprobantePedido(datos) {
+  const { doc, nombreArchivo } = await armarComprobante(datos);
+  await compartirODescargar(doc, nombreArchivo);
+}
+
+// ---------------------------------------------------------------------------
+// Resumen de un despacho: productos enviados, faltantes, cajas y cuenta a rendir.
+// Comisión base de este despacho: Minorista + Comercio al % del vendedor,
+// Mayorista + Granel al 5% fijo. El premio por objetivo y el bono se liquidan a fin de mes.
+// ---------------------------------------------------------------------------
+export const PCT_MAYORISTA_GRANEL = 0.05;
+
+function pctTexto(x) {
+  return `${Math.round(Number(x || 0) * 1000) / 10}%`;
+}
+function fechaCorta(iso) {
+  const [, m, d] = String(iso).split("-");
+  return `${Number(d)}/${Number(m)}`;
+}
+
+// Calcula lo que se vendió, la comisión y lo que hay que rendir.
+export function calcularRendicionDespacho(porCategoria, pctMinorista) {
+  const minoristaComercio = (porCategoria.Minorista || 0) + (porCategoria.Comercio || 0);
+  const mayoristaGranel = (porCategoria.Mayorista || 0) + (porCategoria.Granel || 0);
+  const comisionMinorista = minoristaComercio * (Number(pctMinorista) || 0);
+  const comisionMayorista = mayoristaGranel * PCT_MAYORISTA_GRANEL;
+  const vendido = minoristaComercio + mayoristaGranel;
+  const comision = comisionMinorista + comisionMayorista;
+  return { minoristaComercio, mayoristaGranel, comisionMinorista, comisionMayorista, vendido, comision, aRendir: vendido - comision };
+}
+
+export async function armarResumenDespacho({ vendorNombre, fecha, mesNombre, cajas, nota, productos, faltantes, porCategoria, pctMinorista }) {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageW = 595, pageH = 842;
+  const boxX = 56, boxW = pageW - boxX * 2, boxTop = 56;
+  const limiteY = pageH - 64;
+  const padX = boxX + 26, rightX = boxX + boxW - 26;
+  const colProducto = padX, colCant = rightX - 140, colPrecio = rightX - 75, colTotal = rightX;
+  const anchoNombre = colCant - colProducto - 36;
+  const r = calcularRendicionDespacho(porCategoria, pctMinorista);
+  // Los números de unidades se centran justo debajo de la palabra "UNIDADES".
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  const centroUnidades = padX + doc.getTextWidth("UNIDADES") / 2;
+
+  const finMarco = {};
+  const dibujarMarco = (pagina) => {
+    doc.setPage(pagina);
+    doc.setDrawColor(...BORDER);
+    doc.setLineWidth(1);
+    doc.setLineDashPattern([2.5, 2], 0);
+    doc.roundedRect(boxX, boxTop, boxW, finMarco[pagina] - boxTop, 10, 10, "S");
+    doc.setLineDashPattern([], 0);
+  };
+
+  let pagina = 1;
+  let y = boxTop + 40;
+  const nuevaPagina = () => {
+    finMarco[pagina] = pageH - 56;
+    dibujarMarco(pagina);
+    doc.addPage();
+    pagina++;
+    y = boxTop + 36;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(...TEXT_SOFT);
+    doc.text(`Resumen del despacho del ${fechaCorta(fecha)} (continuación)`, padX, y);
+    y += 24;
+  };
+  const asegurar = (alto) => { if (y + alto > limiteY) nuevaPagina(); };
+  const linea = () => { doc.setDrawColor(...BORDER); doc.setLineWidth(0.75); doc.line(padX, y, rightX, y); };
+  const titulo = (texto) => {
+    asegurar(50);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(...RUST);
+    doc.text(texto, padX, y);
+    y += 16;
+  };
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(17);
+  doc.setTextColor(...TEXT);
+  doc.text(`Despacho del ${fechaCorta(fecha)}`, padX, y);
+  y += 18;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10.5);
+  doc.setTextColor(...TEXT_SOFT);
+  doc.text(`${vendorNombre} · ${mesNombre}`, padX, y);
+  y += 22;
+  linea();
+  y += 24;
+
+  // 1) Productos enviados: solo producto y unidades, en orden alfabético
+  titulo("Productos enviados");
+  const encabezado = () => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(...TEXT_SOFT);
+    doc.text("UNIDADES", padX, y);
+    doc.text("PRODUCTO", padX + 62, y);
+    y += 6;
+    linea();
+    y += 15;
+  };
+  asegurar(60);
+  encabezado();
+  let totalUnidades = 0;
+  productos.forEach((l) => {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    const partes = doc.splitTextToSize(String(l.producto), rightX - (padX + 62));
+    const alto = Math.max(18, partes.length * 12.5 + 5);
+    if (y + alto > limiteY) { nuevaPagina(); encabezado(); }
+    doc.setTextColor(...TEXT);
+    doc.text(partes, padX + 62, y);
+    doc.setFont("helvetica", "bold");
+    doc.text(String(l.unidades), centroUnidades, y, { align: "center" });
+    totalUnidades += Number(l.unidades) || 0;
+    y += alto;
+  });
+  if (productos.length === 0) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(...TEXT_SOFT);
+    doc.text("No hay productos en este despacho.", padX, y);
+    y += 24;
+  } else {
+    asegurar(30);
+    y += 2;
+    linea();
+    y += 17;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(...TEXT_SOFT);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...TEXT);
+    doc.text(String(totalUnidades), centroUnidades, y, { align: "center" });
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...TEXT_SOFT);
+    doc.text("Total de unidades enviadas", padX + 62, y);
+    y += 28;
+  }
+
+  // 2) Cajas
+  asegurar(70);
+  titulo("Cajas enviadas");
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10.5);
+  doc.setTextColor(...TEXT);
+  doc.text(cajas ? `${cajas} ${Number(cajas) === 1 ? "caja" : "cajas"}` : "Sin dato de cajas", padX, y);
+  y += 16;
+  if (nota) {
+    const partesNota = doc.splitTextToSize(String(nota), rightX - padX);
+    asegurar(partesNota.length * 13 + 6);
+    doc.setFontSize(9.5);
+    doc.setTextColor(...TEXT_SOFT);
+    doc.text(partesNota, padX, y);
+    y += partesNota.length * 13;
+  }
+  y += 16;
+
+  // 3) Faltantes
+  titulo("Productos faltantes");
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  if (faltantes.length === 0) {
+    doc.setTextColor(...TEXT_SOFT);
+    doc.text("Sin faltantes.", padX, y);
+    y += 22;
+  } else {
+    faltantes.forEach((f) => {
+      const partes = doc.splitTextToSize(String(f.producto), rightX - (padX + 62));
+      const alto = Math.max(18, partes.length * 12.5 + 5);
+      asegurar(alto);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(...TEXT);
+      doc.text(partes, padX + 62, y);
+      doc.setFont("helvetica", "bold");
+      doc.text(String(f.n), centroUnidades, y, { align: "center" });
+      y += alto;
+    });
+    y += 8;
+  }
+
+  // 4) Cuenta: vendido, comisión y a rendir (siempre juntos en la misma página)
+  const alto4 = 235;
+  asegurar(alto4);
+  titulo("Resumen de pago");
+  const fila = (etiqueta, valor, negrita) => {
+    doc.setFont("helvetica", negrita ? "bold" : "normal");
+    doc.setFontSize(10.5);
+    doc.setTextColor(...(negrita ? TEXT : TEXT_SOFT));
+    doc.text(etiqueta, padX, y);
+    doc.setTextColor(...TEXT);
+    doc.text(valor, rightX, y, { align: "right" });
+    y += 20;
+  };
+  fila("Vendiste · Minorista y Comercio", fmt(r.minoristaComercio));
+  fila("Vendiste · Mayorista y Granel", fmt(r.mayoristaGranel));
+  fila("Total vendido", fmt(r.vendido), true);
+  y += 2; linea(); y += 18;
+  fila(`Tu comisión · Minorista y Comercio (${pctTexto(pctMinorista)})`, fmt(r.comisionMinorista));
+  fila(`Tu comisión · Mayorista y Granel (${pctTexto(PCT_MAYORISTA_GRANEL)})`, fmt(r.comisionMayorista));
+  fila("Tu comisión total", fmt(r.comision), true);
+  y += 4;
+  doc.setFillColor(...CREAM);
+  doc.roundedRect(padX - 10, y - 16, boxW - 32, 32, 5, 5, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(...RUST);
+  doc.text("Tenés que rendir", padX, y + 4);
+  doc.text(fmt(r.aRendir), rightX, y + 4, { align: "right" });
+  y += 40;
+
+  // Pie: logo de El Castaño × nombre del vendedor
+  asegurar(40);
+  y += 8;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(...TEXT_SOFT);
+  const textoVendedor = `× ${vendorNombre}`;
+  const anchoVendedor = doc.getTextWidth(textoVendedor);
+  doc.text(textoVendedor, rightX, y, { align: "right" });
+  try {
+    const logo = await cargarLogo();
+    const w = 60, h = 14.5;
+    doc.addImage(logo, "PNG", rightX - anchoVendedor - 8 - w, y - 11, w, h);
+  } catch (e) {
+    doc.text("El Castaño", rightX - anchoVendedor - 6, y, { align: "right" });
+  }
+
+  finMarco[pagina] = y + 26;
+  dibujarMarco(pagina);
+
+  const nombreArchivo = `Despacho ${fechaCorta(fecha).replace("/", "-")} ${mesNombre} - ${vendorNombre}.pdf`.replace(/[\\/:*?"<>|]/g, "");
+  return { doc, nombreArchivo };
+}
+
+export async function descargarResumenDespacho(datos) {
+  const { doc, nombreArchivo } = await armarResumenDespacho(datos);
+  await compartirODescargar(doc, nombreArchivo);
 }
