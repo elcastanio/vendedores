@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import * as db from "./db";
 import * as sheets from "./sheetsClient";
-import { descargarComprobantePedido } from "./pdfTicket";
+import { descargarComprobantePedido, descargarResumenDespacho } from "./pdfTicket";
 import { soportaPush, suscribirVendedor, yaEstaSuscripto, registrarSiYaSuscripto } from "./push";
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "castano2026";
@@ -378,7 +378,7 @@ function VendorApp({ vendor, products, onLogout }) {
             Todavía no tenés una planilla vinculada. Pedile al administrador que la cargue en tu ficha.
           </div></div>
         )}
-        {tab === "avisos" && <AvisosTab avisos={avisos} abierto={avisoAbierto} setAbierto={setAvisoAbierto} onLeerTodos={leerTodos} onIrAPedidos={() => setTab("pedidos")} onEliminar={eliminarAviso} datosPorMes={datosAvisos} cargando={cargandoAvisos} />}
+        {tab === "avisos" && <AvisosTab avisos={avisos} abierto={avisoAbierto} setAbierto={setAvisoAbierto} onLeerTodos={leerTodos} onIrAPedidos={() => setTab("pedidos")} onEliminar={eliminarAviso} datosPorMes={datosAvisos} cargando={cargandoAvisos} vendor={vendor} />}
         {tab === "pedidos" && <PedidosTab vendor={vendor} products={products} pedidos={pedidosMes} loadError={pedidosError} onChanged={cargarPedidosMes} mesReal={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "objetivo" && <ObjetivoTab vendor={vendor} pedidos={pedidosMes} loadError={pedidosError} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "equipo" && <EquipoTab vendor={vendor} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
@@ -554,8 +554,46 @@ function fmtFechaAviso(iso) {
 }
 
 // Bandeja de avisos del vendedor. Al abrir uno se muestra el detalle.
-function AvisosTab({ avisos, abierto, setAbierto, onLeerTodos, onIrAPedidos, onEliminar, datosPorMes, cargando }) {
+// Arma los datos del PDF de un despacho a partir de las líneas del mes (en vivo).
+function datosResumenDespacho(datos, fecha, despacho, vendor, mesNombre) {
+  const delDespacho = datos.filter((l) => l.despachado && l.fechaDespacho === fecha);
+  const porProducto = new Map();
+  const porCategoria = {};
+  delDespacho.forEach((l) => {
+    const entregadas = unidadesEntregadas(l);
+    if (entregadas <= 0) return;
+    const total = Number(l.total) || entregadas * Number(l.precio || 0);
+    porProducto.set(l.producto, (porProducto.get(l.producto) || 0) + entregadas);
+    porCategoria[l.categoria] = (porCategoria[l.categoria] || 0) + total;
+  });
+  // Faltantes: lo que faltó de este despacho + lo que sigue sin despachar de esos mismos pedidos.
+  const pedidosDelDespacho = new Set(delDespacho.map((l) => `${l.dia}|${l.cliente}`));
+  const mapaFalt = new Map();
+  delDespacho.forEach((l) => sumarFaltante(mapaFalt, l.producto, unidadesFalt(l)));
+  datos.forEach((l) => {
+    if (!l.despachado && pedidosDelDespacho.has(`${l.dia}|${l.cliente}`)) sumarFaltante(mapaFalt, l.producto, Number(l.unidades) || 0);
+  });
+  const alfabetico = (x, y) => String(x.producto).localeCompare(String(y.producto), "es", { sensitivity: "base" });
+  return {
+    vendorNombre: vendor.nombre, fecha, mesNombre,
+    cajas: despacho && despacho.cajas ? despacho.cajas : null,
+    nota: despacho && despacho.nota ? despacho.nota : "",
+    productos: Array.from(porProducto, ([producto, unidades]) => ({ producto, unidades })).sort(alfabetico),
+    faltantes: Array.from(mapaFalt, ([producto, n]) => ({ producto, n })).sort(alfabetico),
+    porCategoria, pctMinorista: vendor.comision || 0,
+  };
+}
+
+function AvisosTab({ avisos, abierto, setAbierto, onLeerTodos, onIrAPedidos, onEliminar, datosPorMes, cargando, vendor }) {
   const noLeidos = avisos.filter((a) => !a.leida).length;
+  const [descargandoAviso, setDescargandoAviso] = useState(null);
+  const descargarResumen = async (a, datos, fecha, despacho) => {
+    setDescargandoAviso(a.id);
+    try {
+      await descargarResumenDespacho(datosResumenDespacho(datos, fecha, despacho, vendor, a.mes));
+    } catch (e) { alert("No se pudo generar el PDF: " + e.message); }
+    setDescargandoAviso(null);
+  };
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "4px 0 10px" }}>
@@ -608,6 +646,11 @@ function AvisosTab({ avisos, abierto, setAbierto, onLeerTodos, onIrAPedidos, onE
                   <div style={{ color: TOKENS.textSoft, marginTop: 6 }}>Revisá el detalle de tus pedidos para más información.</div>
                   <div className="ec-row-actions" style={{ marginTop: 12 }}>
                     <button className="ec-btn ec-btn-primary" onClick={onIrAPedidos}>Ver mis pedidos</button>
+                    {hayEnVivo && !cargando && (
+                      <button className="ec-btn ec-btn-ghost" disabled={descargandoAviso === a.id} onClick={() => descargarResumen(a, datos, fechaDesp, despachoVivo)}>
+                        {descargandoAviso === a.id ? <Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> : <FileDown size={14} />} Descargar PDF
+                      </button>
+                    )}
                     <button className="ec-btn ec-btn-ghost" onClick={() => { if (window.confirm("¿Borrar este aviso?")) onEliminar(a.id); }} aria-label="Borrar aviso">
                       <Trash2 size={14} /> Borrar
                     </button>
