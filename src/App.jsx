@@ -773,7 +773,12 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
     if (!intentarTocarLinea(l)) return;
     if (!confirm(`¿Anular el pedido de ${l.producto} × ${l.unidades} para ${l.cliente}?`)) return;
     try { await sheets.anularPedidoSheet(vendor.sheetUrl, mesVista, l.fila); refrescar(); }
-    catch (e) { alert(e.message); }
+    catch (e) {
+      // "Load failed" / "Failed to fetch": se cortó la conexión pero la planilla suele haberlo borrado.
+      // Se vuelve a leer la planilla para mostrar el estado real, sin alarmar.
+      if (/load failed|failed to fetch|networkerror/i.test(e.message || "")) refrescar();
+      else alert(e.message);
+    }
   };
 
   const [descargando, setDescargando] = useState(null);
