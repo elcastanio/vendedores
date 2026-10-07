@@ -41,19 +41,32 @@ export default async function handler(req, res) {
     // al tocar la notificación pueda abrirlo dentro de la app.
     let avisoId = null;
     if (detalle) {
-      avisoId = `${vendorIdFinal}-${Date.now()}`;
       const hoyAR = new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" });
-      const { error: errAviso } = await supabase.from("notificaciones").insert({
-        id: avisoId,
-        vendor_id: vendorIdFinal,
-        fecha_despacho: hoyAR,
+      const campos = {
+        fecha_despacho: detalle.fecha || hoyAR,
         semana_label: detalle.semanaLabel || "",
         semana: detalle.semana || "",
         mes: detalle.mes || "",
         cajas: detalle.cajas || null,
         faltantes: detalle.faltantes || [],
-      });
-      if (errAviso) { console.error("No pude guardar el aviso:", errAviso); avisoId = null; }
+      };
+      // Si ya hay un aviso de ese mismo despacho (misma fecha), lo actualizamos
+      // en vez de crear otro, y vuelve a figurar como no leído.
+      let existente = null;
+      if (campos.semana) {
+        const { data: previos } = await supabase.from("notificaciones").select("id")
+          .eq("vendor_id", vendorIdFinal).eq("semana", campos.semana).eq("mes", campos.mes).limit(1);
+        if (previos && previos.length > 0) existente = previos[0].id;
+      }
+      if (existente) {
+        const { error: errUpd } = await supabase.from("notificaciones")
+          .update({ ...campos, leida: false, creada_en: new Date().toISOString() }).eq("id", existente);
+        if (errUpd) console.error("No pude actualizar el aviso:", errUpd); else avisoId = existente;
+      } else {
+        avisoId = `${vendorIdFinal}-${Date.now()}`;
+        const { error: errAviso } = await supabase.from("notificaciones").insert({ id: avisoId, vendor_id: vendorIdFinal, ...campos });
+        if (errAviso) { console.error("No pude guardar el aviso:", errAviso); avisoId = null; }
+      }
     }
 
     const payload = JSON.stringify({
