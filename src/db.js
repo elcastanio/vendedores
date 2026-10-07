@@ -205,7 +205,7 @@ export async function fetchNotificaciones(vendorId) {
   const { data, error } = await supabase.from("notificaciones").select("*").eq("vendor_id", vendorId).order("creada_en", { ascending: false }).limit(50);
   if (error) throw error;
   return (data || []).map((n) => ({
-    id: n.id, fechaDespacho: n.fecha_despacho, semanaLabel: n.semana_label || "", mes: n.mes || "",
+    id: n.id, fechaDespacho: n.fecha_despacho, semanaLabel: n.semana_label || "", semana: n.semana || "", mes: n.mes || "",
     cajas: n.cajas === null || n.cajas === undefined ? null : Number(n.cajas),
     faltantes: Array.isArray(n.faltantes) ? n.faltantes : [], leida: !!n.leida, creadaEn: n.creada_en,
   }));
