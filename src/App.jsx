@@ -223,6 +223,7 @@ function VendorApp({ vendor, products, onLogout }) {
   const [activando, setActivando] = useState(false);
   const [avisos, setAvisos] = useState([]);
   const [avisoAbierto, setAvisoAbierto] = useState(null);
+  const [datosAvisos, setDatosAvisos] = useState({});
   const mesActualVendor = sheets.mesDeFecha(fechaHoy());
 
   const cargarPedidosMes = useCallback(async () => {
@@ -287,6 +288,24 @@ function VendorApp({ vendor, products, onLogout }) {
     return () => { if ("serviceWorker" in navigator) navigator.serviceWorker.removeEventListener("message", alMensaje); };
   }, [abrirAviso]);
 
+  // Al ver los avisos se leen de la planilla los meses a los que se refieren,
+  // para mostrar cajas y faltantes actualizados.
+  const mesesAvisosKey = useMemo(
+    () => Array.from(new Set(avisos.filter((a) => a.semana && a.semana.indexOf("D:") === 0 && a.mes).map((a) => a.mes))).join("|"),
+    [avisos]
+  );
+  useEffect(() => {
+    if (tab !== "avisos" || !vendor.sheetUrl || !mesesAvisosKey) return;
+    let cancelado = false;
+    mesesAvisosKey.split("|").forEach(async (mes) => {
+      try {
+        const data = await sheets.fetchPedidosSheet(vendor.sheetUrl, mes);
+        if (!cancelado) setDatosAvisos((prev) => ({ ...prev, [mes.toLowerCase()]: data }));
+      } catch (e) {}
+    });
+    return () => { cancelado = true; };
+  }, [tab, mesesAvisosKey, vendor.sheetUrl]);
+
   // Un aviso abierto se marca como leído.
   useEffect(() => {
     if (!avisoAbierto) return;
@@ -341,7 +360,7 @@ function VendorApp({ vendor, products, onLogout }) {
             Todavía no tenés una planilla vinculada. Pedile al administrador que la cargue en tu ficha.
           </div></div>
         )}
-        {tab === "avisos" && <AvisosTab avisos={avisos} abierto={avisoAbierto} setAbierto={setAvisoAbierto} onLeerTodos={leerTodos} onIrAPedidos={() => setTab("pedidos")} />}
+        {tab === "avisos" && <AvisosTab avisos={avisos} abierto={avisoAbierto} setAbierto={setAvisoAbierto} onLeerTodos={leerTodos} onIrAPedidos={() => setTab("pedidos")} datosPorMes={datosAvisos} />}
         {tab === "pedidos" && <PedidosTab vendor={vendor} products={products} pedidos={pedidosMes} loadError={pedidosError} onChanged={cargarPedidosMes} mesReal={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "objetivo" && <ObjetivoTab vendor={vendor} pedidos={pedidosMes} loadError={pedidosError} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "equipo" && <EquipoTab vendor={vendor} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
@@ -517,7 +536,7 @@ function fmtFechaAviso(iso) {
 }
 
 // Bandeja de avisos del vendedor. Al abrir uno se muestra el detalle.
-function AvisosTab({ avisos, abierto, setAbierto, onLeerTodos, onIrAPedidos }) {
+function AvisosTab({ avisos, abierto, setAbierto, onLeerTodos, onIrAPedidos, datosPorMes }) {
   const noLeidos = avisos.filter((a) => !a.leida).length;
   return (
     <>
@@ -532,6 +551,15 @@ function AvisosTab({ avisos, abierto, setAbierto, onLeerTodos, onIrAPedidos }) {
       ) : (
         avisos.map((a) => {
           const abiertoEste = abierto === a.id;
+          // Los avisos de un despacho por fecha muestran cajas y faltantes EN VIVO
+          // (de la planilla), así si después cambian el aviso no queda desactualizado.
+          const nuevoFormato = !!a.semana && a.semana.indexOf("D:") === 0;
+          const datos = nuevoFormato ? datosPorMes[(a.mes || "").toLowerCase()] : null;
+          const fechaDesp = nuevoFormato ? a.semana.slice(2) : "";
+          const hayEnVivo = !!datos && datos.some((l) => l.despachado && l.fechaDespacho === fechaDesp);
+          const despachoVivo = hayEnVivo ? (datos.despachos || []).find((d) => d.semana === a.semana && d.mes.toLowerCase() === (a.mes || "").toLowerCase()) : null;
+          const cajas = hayEnVivo ? (despachoVivo && despachoVivo.cajas ? despachoVivo.cajas : null) : a.cajas;
+          const faltantes = hayEnVivo ? faltantesDeDespacho(datos, fechaDesp) : a.faltantes;
           return (
             <div className="ec-card" key={a.id} style={!a.leida ? { borderColor: TOKENS.rust } : undefined}>
               <div className="ec-pedido-top" style={{ cursor: "pointer" }} onClick={() => setAbierto(abiertoEste ? null : a.id)}>
@@ -540,16 +568,16 @@ function AvisosTab({ avisos, abierto, setAbierto, onLeerTodos, onIrAPedidos }) {
                     {!a.leida && <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 4, background: TOKENS.rust, marginRight: 7 }} />}
                     Pedidos despachados
                   </div>
-                  <div className="ec-pedido-meta">{fmtFechaAviso(a.fechaDespacho)}{a.semanaLabel ? ` · Semana del ${a.semanaLabel}` : ""}</div>
+                  <div className="ec-pedido-meta">{fmtFechaAviso(a.fechaDespacho)}{!nuevoFormato && a.semanaLabel ? ` · Semana del ${a.semanaLabel}` : ""}</div>
                 </div>
                 <ChevronRight size={16} style={{ transform: abiertoEste ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
               </div>
               {abiertoEste && (
                 <div style={{ marginTop: 10, borderTop: `1px solid ${TOKENS.border}`, paddingTop: 10, fontSize: 14, lineHeight: 1.65 }}>
                   <div>Tus pedidos se despacharon el <b>{fmtFechaAviso(a.fechaDespacho)}</b>.</div>
-                  {a.cajas ? <div>Recibís <b>{a.cajas} {a.cajas === 1 ? "caja" : "cajas"}</b>.</div> : null}
-                  <div>{a.faltantes.length > 0 ? <>Faltante: <b>{a.faltantes.join(", ")}</b></> : "Sin faltantes."}</div>
-                  <div style={{ color: TOKENS.textSoft, marginTop: 6 }}>Revisá el detalle de la semana para más información.</div>
+                  {cajas ? <div>Recibís <b>{cajas} {cajas === 1 ? "caja" : "cajas"}</b>.</div> : null}
+                  <div>{faltantes.length > 0 ? <>Faltante: <b>{faltantes.join(", ")}</b></> : "Sin faltantes."}</div>
+                  <div style={{ color: TOKENS.textSoft, marginTop: 6 }}>Revisá el detalle de tus pedidos para más información.</div>
                   <button className="ec-btn ec-btn-primary" style={{ marginTop: 12 }} onClick={onIrAPedidos}>Ver mis pedidos</button>
                 </div>
               )}
@@ -570,6 +598,27 @@ function ResumenDespacho({ faltantes, despacho }) {
       {despacho && despacho.nota ? <div style={{ color: TOKENS.textSoft }}>{despacho.nota}</div> : null}
     </div>
   );
+}
+
+// Fecha de hoy en Argentina (AAAA-MM-DD), sin depender de la hora del celular.
+function hoyAR() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" });
+}
+function etiquetaDespacho(fecha) {
+  const [, m, d] = String(fecha).split("-");
+  return `Despacho del ${Number(d)}/${Number(m)}`;
+}
+// Faltantes de un despacho (las líneas que salieron en esa fecha): lo marcado
+// como faltante + lo que sigue sin despachar de esos mismos pedidos.
+function faltantesDeDespacho(lineasMes, fecha) {
+  const delDespacho = lineasMes.filter((l) => l.despachado && l.fechaDespacho === fecha);
+  const pedidos = new Set(delDespacho.map((l) => `${l.dia}|${l.cliente}`));
+  const out = [];
+  delDespacho.forEach((l) => { if (l.faltante && out.indexOf(l.producto) === -1) out.push(l.producto); });
+  lineasMes.forEach((l) => {
+    if (!l.despachado && l.producto && pedidos.has(`${l.dia}|${l.cliente}`) && out.indexOf(l.producto) === -1) out.push(l.producto);
+  });
+  return out;
 }
 
 function faltantesDe(lineas) {
@@ -730,18 +779,43 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
       }
     });
 
+    // Cada línea va a donde corresponde: lo que sigue sin despachar queda en
+    // pendientes (por semana del pedido); lo despachado se agrupa por FECHA DE
+    // DESPACHO, así un pedido puede salir en envíos distintos sin mezclarse.
     const pendientesPorSemana = new Map();
-    const completasPorSemana = new Map();
+    const despachosPorClave = new Map();
+    const pendientesPorPedido = new Map();
     ordenes.forEach((orden) => {
-      const completa = orden.lineas.every((l) => l.despachado);
       const { key, label } = infoSemana(orden.dia, referencia);
-      const destino = completa ? completasPorSemana : pendientesPorSemana;
-      if (!destino.has(key)) destino.set(key, { key, label, ordenes: [] });
-      destino.get(key).ordenes.push(orden);
+      const ordenKey = `${orden.dia}|${orden.cliente}`;
+      const pend = orden.lineas.filter((l) => !l.despachado);
+      if (pend.length > 0) {
+        if (!pendientesPorSemana.has(key)) pendientesPorSemana.set(key, { key, label, ordenes: [] });
+        pendientesPorSemana.get(key).ordenes.push({ ...orden, lineas: pend });
+        pendientesPorPedido.set(ordenKey, [...(pendientesPorPedido.get(ordenKey) || []), ...pend]);
+      }
+      const porGrupo = new Map();
+      orden.lineas.filter((l) => l.despachado).forEach((l) => {
+        const gk = l.fechaDespacho ? "D:" + l.fechaDespacho : key;
+        if (!porGrupo.has(gk)) porGrupo.set(gk, { label: l.fechaDespacho ? etiquetaDespacho(l.fechaDespacho) : label, sort: l.fechaDespacho || key, lineas: [] });
+        porGrupo.get(gk).lineas.push(l);
+      });
+      porGrupo.forEach((g, gk) => {
+        if (!despachosPorClave.has(gk)) despachosPorClave.set(gk, { key: gk, label: g.label, sort: g.sort, ordenes: [], ordenKeys: new Set() });
+        const dest = despachosPorClave.get(gk);
+        dest.ordenes.push({ ...orden, lineas: g.lineas });
+        dest.ordenKeys.add(ordenKey);
+      });
     });
 
     const gruposPendientes = Array.from(pendientesPorSemana.values()).sort((a, b) => a.key.localeCompare(b.key));
-    const semanasCompletas = Array.from(completasPorSemana.values()).sort((a, b) => b.key.localeCompare(a.key));
+    const semanasCompletas = Array.from(despachosPorClave.values()).sort((a, b) => b.sort.localeCompare(a.sort)).map((g) => {
+      // Faltantes del despacho: lo marcado + lo que falta enviar de esos mismos pedidos.
+      const lineasGrupo = g.ordenes.flatMap((o) => o.lineas);
+      const faltantes = faltantesDe(lineasGrupo);
+      g.ordenKeys.forEach((ok) => (pendientesPorPedido.get(ok) || []).forEach((l) => { if (l.producto && faltantes.indexOf(l.producto) === -1) faltantes.push(l.producto); }));
+      return { ...g, faltantes };
+    });
     return { gruposPendientes, semanasCompletas };
   }, [pedidosDelMes, mesConsulta]);
 
@@ -916,7 +990,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                   </div>
                 </div>
                 <ResumenDespacho
-                  faltantes={faltantesDe(todasLineas)}
+                  faltantes={sem.faltantes}
                   despacho={((pedidosDelMes && pedidosDelMes.despachos) || []).find((d) => d.semana === sem.key && d.mes.toLowerCase() === mesVista.toLowerCase())}
                 />
                 {abierta && (
@@ -1708,15 +1782,27 @@ function PedidosAdmin({ vendors }) {
   }, [vendor, mes]);
   useEffect(() => { cargar(); }, [cargar]);
 
+  // Lo despachado se agrupa por fecha de despacho; lo que sigue sin despachar,
+  // por semana del pedido (clave "P:").
   const semanas = useMemo(() => {
     if (!pedidos) return null;
     const mapa = new Map();
     pedidos.forEach((p) => {
       const { key, label } = infoSemana(p.dia, referencia);
-      if (!mapa.has(key)) mapa.set(key, { key, label, lineas: [] });
-      mapa.get(key).lineas.push(p);
+      let gk, glabel, sort;
+      if (p.despachado) {
+        gk = p.fechaDespacho ? "D:" + p.fechaDespacho : key;
+        glabel = p.fechaDespacho ? etiquetaDespacho(p.fechaDespacho) : label;
+        sort = "0" + (p.fechaDespacho || key);
+      } else {
+        gk = "P:" + key;
+        glabel = `${label} · sin despachar`;
+        sort = "1" + key; // los pendientes primero
+      }
+      if (!mapa.has(gk)) mapa.set(gk, { key: gk, label: glabel, sort, lineas: [] });
+      mapa.get(gk).lineas.push(p);
     });
-    return Array.from(mapa.values()).sort((a, b) => b.key.localeCompare(a.key));
+    return Array.from(mapa.values()).sort((a, b) => (a.sort[0] !== b.sort[0] ? b.sort[0].localeCompare(a.sort[0]) : b.sort.localeCompare(a.sort)));
   }, [pedidos, mes]);
 
   const prepararColumnas = async () => {
@@ -1754,18 +1840,21 @@ function PedidosAdmin({ vendors }) {
   const confirmarDespacho = async (semana, despachar) => {
     setError(""); setOk(""); setDespachandoSemana(semana.key);
     try {
-      await sheets.guardarDespachoSheet(vendor.sheetUrl, {
-        mes, semana: semana.key, cajas: cajasInput === "" ? "" : Number(cajasInput), nota: notaInput.trim(),
-      });
+      // Lo pendiente se despacha hoy: se marcan primero las líneas (la planilla les
+      // pone la fecha de hoy) y después se guardan las cajas y la nota de ese despacho.
+      const esPendiente = semana.key.indexOf("P:") === 0;
       if (despachar) {
         const pendientes = semana.lineas.filter((l) => l.estado !== "DESPACHADO");
         for (const linea of pendientes) {
           await sheets.updatePedidoSheet(vendor.sheetUrl, mes, linea.fila, { estado: "DESPACHADO" });
         }
       }
+      await sheets.guardarDespachoSheet(vendor.sheetUrl, {
+        mes, semana: esPendiente ? "D:" + hoyAR() : semana.key, cajas: cajasInput === "" ? "" : Number(cajasInput), nota: notaInput.trim(),
+      });
       setPedidos(await sheets.fetchPedidosSheet(vendor.sheetUrl, mes));
       setFormSemana(null);
-      setOk(despachar ? "Semana despachada. Al vendedor le llega el aviso en unos minutos." : "Datos del despacho guardados.");
+      setOk(despachar ? "Despachado. Al vendedor le llega el aviso en unos minutos." : "Datos del despacho guardados.");
     } catch (e) { setError("No se pudo guardar el despacho: " + e.message); }
     setDespachandoSemana(null);
   };
@@ -1810,7 +1899,7 @@ function PedidosAdmin({ vendors }) {
                   <ChevronRight size={16} style={{ transform: abierta ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
                 </div>
               </div>
-              <ResumenDespacho faltantes={faltantesDe(sem.lineas)} despacho={despachoDe(sem.key)} />
+              <ResumenDespacho faltantes={sem.key.indexOf("D:") === 0 ? faltantesDeDespacho(pedidos, sem.key.slice(2)) : faltantesDe(sem.lineas)} despacho={despachoDe(sem.key)} />
               {formSemana === sem.key ? (
                 <div style={{ marginTop: 10 }}>
                   <div className="ec-row2">
@@ -1826,7 +1915,7 @@ function PedidosAdmin({ vendors }) {
                 </div>
               ) : (
                 <button className={estado !== "DESPACHADO" ? "ec-btn ec-btn-primary" : "ec-btn ec-btn-ghost"} style={{ marginTop: 10 }} onClick={() => abrirDespacho(sem)}>
-                  {estado !== "DESPACHADO" ? <><Check size={15} /> Despachar toda la semana</> : "Editar cajas y nota"}
+                  {estado !== "DESPACHADO" ? <><Check size={15} /> Despachar lo pendiente</> : "Editar cajas y nota"}
                 </button>
               )}
               {abierta && (
