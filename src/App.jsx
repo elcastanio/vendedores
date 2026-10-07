@@ -686,6 +686,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
   const [error, setError] = useState("");
   const [semanaAbierta, setSemanaAbierta] = useState(null);
   const [editandoLinea, setEditandoLinea] = useState(null);
+  const [anulandoFila, setAnulandoFila] = useState(null); // fila que se está borrando (hasta que la lista se actualiza)
   const [edLinea, setEdLinea] = useState({ categoria: "", cliente: "", productoId: "", unidades: "" });
   const [guardandoLinea, setGuardandoLinea] = useState(false);
   const [errorLinea, setErrorLinea] = useState("");
@@ -770,8 +771,8 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
         categoria: edLinea.categoria, cliente: edLinea.cliente.trim(), producto: prod.nombre, unidades: Number(edLinea.unidades),
         clienteAnterior: l.cliente, productoAnterior: l.producto,
       });
+      await refrescar(); // se espera a que la lista muestre el cambio antes de cerrar la edición
       setEditandoLinea(null);
-      refrescar();
     } catch (e) { setErrorLinea(e.message); }
     setGuardandoLinea(false);
   };
@@ -779,13 +780,15 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
   const anularLinea = async (l) => {
     if (!intentarTocarLinea(l)) return;
     if (!confirm(`¿Anular el pedido de ${l.producto} × ${l.unidades} para ${l.cliente}?`)) return;
-    try { await sheets.anularPedidoSheet(vendor.sheetUrl, mesVista, l.fila, { cliente: l.cliente, producto: l.producto }); refrescar(); }
+    setAnulandoFila(l.fila);
+    try { await sheets.anularPedidoSheet(vendor.sheetUrl, mesVista, l.fila, { cliente: l.cliente, producto: l.producto }); await refrescar(); }
     catch (e) {
       // "Load failed" / "Failed to fetch": se cortó la conexión pero la planilla suele haberlo borrado.
       // Se vuelve a leer la planilla para mostrar el estado real, sin alarmar.
-      if (/load failed|failed to fetch|networkerror/i.test(e.message || "")) refrescar();
+      if (/load failed|failed to fetch|networkerror/i.test(e.message || "")) await refrescar();
       else alert(e.message);
     }
+    setAnulandoFila(null);
   };
 
   const [descargando, setDescargando] = useState(null);
@@ -1017,8 +1020,14 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                                         <span>{l.producto} × {unidadesEntregadas(l)} {l.estado === "DESPACHADO" ? "✓" : l.estado === "EN PROCESO" ? "⏳" : ""}{Number(l.precio) > 0 && <span style={{ color: TOKENS.textSoft, fontSize: 12 }}> · {fmtMoney(l.precio)} c/u</span>}</span>
                                         <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                           {fmtMoney(l.total)}
-                                          <button type="button" onClick={() => empezarEdicion(l)} style={{ background: "none", border: "none", cursor: "pointer", color: TOKENS.textSoft, padding: 0 }} aria-label="Editar"><Pencil size={13} /></button>
-                                          <button type="button" onClick={() => anularLinea(l)} style={{ background: "none", border: "none", cursor: "pointer", color: TOKENS.danger, padding: 0 }} aria-label="Anular"><X size={14} /></button>
+                                          {anulandoFila === l.fila ? (
+                                            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: TOKENS.danger, fontSize: 12 }}><Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} />Borrando...</span>
+                                          ) : (
+                                            <>
+                                              <button type="button" disabled={anulandoFila !== null} onClick={() => empezarEdicion(l)} style={{ background: "none", border: "none", cursor: anulandoFila !== null ? "default" : "pointer", opacity: anulandoFila !== null ? 0.35 : 1, color: TOKENS.textSoft, padding: 0 }} aria-label="Editar"><Pencil size={13} /></button>
+                                              <button type="button" disabled={anulandoFila !== null} onClick={() => anularLinea(l)} style={{ background: "none", border: "none", cursor: anulandoFila !== null ? "default" : "pointer", opacity: anulandoFila !== null ? 0.35 : 1, color: TOKENS.danger, padding: 0 }} aria-label="Anular"><X size={14} /></button>
+                                            </>
+                                          )}
                                         </span>
                                       </div>
                                       {unidadesFalt(l) > 0 && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Faltan {unidadesFalt(l)} de {l.unidades} u.: {l.producto}</div>}
