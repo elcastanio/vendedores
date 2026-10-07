@@ -1002,7 +1002,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                                   ) : (
                                     <>
                                       <div className="ec-linea">
-                                        <span>{l.producto} × {unidadesEntregadas(l)} {l.estado === "DESPACHADO" ? "✓" : l.estado === "EN PROCESO" ? "⏳" : ""}</span>
+                                        <span>{l.producto} × {unidadesEntregadas(l)} {l.estado === "DESPACHADO" ? "✓" : l.estado === "EN PROCESO" ? "⏳" : ""}{Number(l.precio) > 0 && <span style={{ color: TOKENS.textSoft, fontSize: 12 }}> · {fmtMoney(l.precio)} c/u</span>}</span>
                                         <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                           {fmtMoney(l.total)}
                                           <button type="button" onClick={() => empezarEdicion(l)} style={{ background: "none", border: "none", cursor: "pointer", color: TOKENS.textSoft, padding: 0 }} aria-label="Editar"><Pencil size={13} /></button>
@@ -1060,7 +1060,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                           </div>
                           {g.lineas.map((l) => (
                             <div key={l.fila}>
-                              <div className="ec-linea"><span>{l.producto} × {unidadesEntregadas(l)}</span><span>{fmtMoney(l.total)}</span></div>
+                              <div className="ec-linea"><span>{l.producto} × {unidadesEntregadas(l)}{Number(l.precio) > 0 && <span style={{ color: TOKENS.textSoft, fontSize: 12 }}> · {fmtMoney(l.precio)} c/u</span>}</span><span>{fmtMoney(l.total)}</span></div>
                               {unidadesFalt(l) > 0 && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Faltan {unidadesFalt(l)} de {l.unidades} u.: {l.producto}</div>}
                             </div>
                           ))}
