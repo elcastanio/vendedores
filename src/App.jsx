@@ -10,7 +10,6 @@ import * as sheets from "./sheetsClient";
 import { descargarComprobantePedido } from "./pdfTicket";
 import { soportaPush, suscribirVendedor, yaEstaSuscripto, registrarSiYaSuscripto } from "./push";
 
-const APP_VERSION = "07.10-faltantes-2";
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "castano2026";
 
 const TOKENS = {
@@ -343,7 +342,7 @@ function VendorApp({ vendor, products, onLogout }) {
   return (
     <div className="ec-shell">
       <div className="ec-topbar">
-        <div><img src="/logo.png" alt="El Castaño" style={{ height: 22 }} /><div className="ec-sub" style={{ marginTop: 4 }}>Hola, {vendor.nombre} <span style={{ opacity: 0.45, fontSize: 10.5 }}>· v{APP_VERSION}</span></div></div>
+        <div><img src="/logo.png" alt="El Castaño" style={{ height: 22 }} /><div className="ec-sub" style={{ marginTop: 4 }}>Hola, {vendor.nombre}</div></div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button className="ec-btn ec-btn-ghost" style={{ position: "relative" }} onClick={() => { setTab("avisos"); setAvisoAbierto(null); }} aria-label="Avisos">
             <Bell size={14} />
