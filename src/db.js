@@ -216,6 +216,11 @@ export async function marcarNotificacionLeida(id) {
   if (error) throw error;
 }
 
+export async function eliminarNotificacion(id) {
+  const { error } = await supabase.from("notificaciones").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function marcarTodasLeidas(vendorId) {
   const { error } = await supabase.from("notificaciones").update({ leida: true }).eq("vendor_id", vendorId).eq("leida", false);
   if (error) throw error;
