@@ -195,8 +195,8 @@ function LoginScreen({ vendors, onVendorLogin, onAdminLogin }) {
   return (
     <div className="ec-shell">
       <div className="ec-login-wrap">
-        <img src="/logo.png" alt="El Castaño" style={{ width: "72%", maxWidth: 280, marginBottom: 14 }} />
-        <div className="ec-sub" style={{ marginBottom: 30 }}>Pedidos, objetivos y stock para tu red de vendedores</div>
+        <img src="/logo.png" alt="El Castaño" style={{ display: "block", width: "72%", maxWidth: 280, margin: "0 auto 14px" }} />
+        <div className="ec-sub" style={{ marginBottom: 30, textAlign: "center", letterSpacing: 2.5, fontWeight: 600 }}>ALIMENTOS NATURALES</div>
         <div onKeyDown={(e) => { if (e.key === "Enter") submit(e); }}>
           {mode === "vendedor" ? (
             <>
