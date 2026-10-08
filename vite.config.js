@@ -16,7 +16,7 @@ export default defineConfig({
       manifest: {
         name: "El Castaño · Vendedores",
         short_name: "El Castaño",
-        description: "Pedidos, objetivos y stock para la red de vendedores de El Castaño",
+        description: "Alimentos naturales · El Castaño",
         theme_color: "#003C69",
         background_color: "#FFFFFF",
         display: "standalone",
