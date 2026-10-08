@@ -13,6 +13,12 @@ function precioCampoDeCategoria(categoria) {
   );
 }
 
+// Un producto se ofrece en una categoría solo si su precio ahí es mayor a 0.
+export function tienePrecio(producto, categoria) {
+  if (!producto) return false;
+  return Number(producto[precioCampoDeCategoria(categoria)] || 0) > 0;
+}
+
 export function precioProducto(producto, categoria) {
   if (!producto) return 0;
   return Number(producto[precioCampoDeCategoria(categoria)] || 0);
