@@ -194,7 +194,7 @@ function LoginScreen({ vendors, onVendorLogin, onAdminLogin }) {
 
   return (
     <div className="ec-shell">
-      <div className="ec-login-wrap">
+      <div className="ec-login-wrap" style={{ position: "relative" }}>
         <img src="/logo.png" alt="El Castaño" style={{ display: "block", width: "72%", maxWidth: 280, margin: "0 auto 14px" }} />
         <div className="ec-sub" style={{ marginBottom: 30, textAlign: "center", letterSpacing: 2.5, fontWeight: 600 }}>ALIMENTOS NATURALES</div>
         <div onKeyDown={(e) => { if (e.key === "Enter") submit(e); }}>
@@ -207,10 +207,24 @@ function LoginScreen({ vendors, onVendorLogin, onAdminLogin }) {
             <div className="ec-field"><label>Contraseña de administrador</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••" autoComplete="current-password" /></div>
           )}
           {error && <div className="ec-error">{error}</div>}
-          <button type="button" onClick={submit} className="ec-btn ec-btn-rust ec-btn-block" style={{ marginTop: 6 }}>Entrar</button>
+          <button type="button" onClick={submit} className="ec-btn ec-btn-rust ec-btn-block" style={{ marginTop: 6 }}>Iniciar sesión</button>
         </div>
-        <button className="ec-btn ec-btn-ghost ec-btn-block" style={{ marginTop: 12 }} onClick={() => { setError(""); setPassword(""); setMode(mode === "vendedor" ? "admin" : "vendedor"); }}>
-          {mode === "vendedor" ? (<><ShieldCheck size={15} /> Soy administrador</>) : "Volver a acceso de vendedor"}
+        {/* Acceso de administrador: solo el escudito, en un cuadradito arriba a la derecha.
+            Si ya está en modo administrador, el escudito aparece marcado y al tocarlo se vuelve al acceso de vendedor. */}
+        <button
+          type="button"
+          aria-label={mode === "vendedor" ? "Acceso de administrador" : "Volver a acceso de vendedor"}
+          title={mode === "vendedor" ? "Acceso de administrador" : "Volver a acceso de vendedor"}
+          onClick={() => { setError(""); setPassword(""); setMode(mode === "vendedor" ? "admin" : "vendedor"); }}
+          style={{
+            position: "absolute", top: 14, right: 14, width: 38, height: 38, borderRadius: 9,
+            display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+            border: `1px solid ${mode === "admin" ? TOKENS.olive : TOKENS.border}`,
+            background: mode === "admin" ? TOKENS.olive : TOKENS.surface,
+            color: mode === "admin" ? "#fff" : TOKENS.textSoft,
+          }}
+        >
+          <ShieldCheck size={18} />
         </button>
       </div>
     </div>
