@@ -15,6 +15,12 @@ function cargarLogo() {
   return logoDataUrlPromise;
 }
 
+// Con centavos, para la cuenta de comisión y saldo (no se redondea).
+function fmtC(n) {
+  const v = Math.round((Number(n) || 0) * 100) / 100;
+  return "$" + v.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function fmt(n) {
   return "$" + Number(n || 0).toLocaleString("es-AR", { maximumFractionDigits: 0 });
 }
@@ -234,7 +240,7 @@ export async function descargarComprobantePedido(datos) {
 export const PCT_MAYORISTA_GRANEL = 0.05;
 
 function pctTexto(x) {
-  return `${Math.round(Number(x || 0) * 1000) / 10}%`;
+  return `${String(Math.round(Number(x || 0) * 1000) / 10).replace(".", ",")}%`;
 }
 function fechaCorta(iso) {
   const [, m, d] = String(iso).split("-");
@@ -248,8 +254,8 @@ export function calcularRendicionDespacho(porCategoria, pctMinorista) {
   const comisionMinorista = minoristaComercio * (Number(pctMinorista) || 0);
   const comisionMayorista = mayoristaGranel * PCT_MAYORISTA_GRANEL;
   const vendido = minoristaComercio + mayoristaGranel;
-  const comision = comisionMinorista + comisionMayorista;
-  return { minoristaComercio, mayoristaGranel, comisionMinorista, comisionMayorista, vendido, comision, aRendir: vendido - comision };
+  const c2 = (x) => Math.round(x * 100) / 100;
+  return { minoristaComercio: c2(minoristaComercio), mayoristaGranel: c2(mayoristaGranel), comisionMinorista: c2(comisionMinorista), comisionMayorista: c2(comisionMayorista), vendido: c2(vendido), comision: c2(comisionMinorista + comisionMayorista), aRendir: c2(vendido - comisionMinorista - comisionMayorista) };
 }
 
 export async function armarResumenDespacho({ vendorNombre, fecha, mesNombre, cajas, nota, productos, faltantes, porCategoria, pctMinorista }) {
@@ -420,13 +426,13 @@ export async function armarResumenDespacho({ vendorNombre, fecha, mesNombre, caj
     doc.text(valor, rightX, y, { align: "right" });
     y += 20;
   };
-  fila("Vendiste · Minorista y Comercio", fmt(r.minoristaComercio));
-  fila("Vendiste · Mayorista y Granel", fmt(r.mayoristaGranel));
-  fila("Total vendido", fmt(r.vendido), true);
+  fila("Vendiste · Minorista y Comercio", fmtC(r.minoristaComercio));
+  fila("Vendiste · Mayorista y Granel", fmtC(r.mayoristaGranel));
+  fila("Total vendido", fmtC(r.vendido), true);
   y += 2; linea(); y += 18;
-  fila(`Tu comisión · Minorista y Comercio (${pctTexto(pctMinorista)})`, fmt(r.comisionMinorista));
-  fila(`Tu comisión · Mayorista y Granel (${pctTexto(PCT_MAYORISTA_GRANEL)})`, fmt(r.comisionMayorista));
-  fila("Tu comisión total", fmt(r.comision), true);
+  fila(`Tu comisión · Minorista y Comercio (${pctTexto(pctMinorista)})`, fmtC(r.comisionMinorista));
+  fila(`Tu comisión · Mayorista y Granel (${pctTexto(PCT_MAYORISTA_GRANEL)})`, fmtC(r.comisionMayorista));
+  fila("Tu comisión total", fmtC(r.comision), true);
   y += 4;
   doc.setFillColor(...CREAM);
   doc.roundedRect(padX - 10, y - 16, boxW - 32, 32, 5, 5, "F");
@@ -434,7 +440,7 @@ export async function armarResumenDespacho({ vendorNombre, fecha, mesNombre, caj
   doc.setFontSize(13);
   doc.setTextColor(...RUST);
   doc.text("Tenés que rendir", padX, y + 4);
-  doc.text(fmt(r.aRendir), rightX, y + 4, { align: "right" });
+  doc.text(fmtC(r.aRendir), rightX, y + 4, { align: "right" });
   y += 40;
 
   // Pie: logo de El Castaño × nombre del vendedor
