@@ -440,7 +440,13 @@ function MesField({ label, value, onChange }) {
 
 // Buscador de producto con autocompletado — reemplaza al <select> nativo,
 // que se vuelve inusable con más de unos pocos cientos de productos.
-function ProductPicker({ products, value, onChange, placeholder }) {
+function ProductPicker({ products, value, onChange, placeholder, categoria }) {
+  // Si se indica categoría, solo se ofrecen los productos con precio mayor a 0 en esa categoría.
+  const productosDisponibles = useMemo(
+    () => (categoria ? products.filter((p) => db.tienePrecio(p, categoria)) : products),
+    [products, categoria]
+  );
+  products = productosDisponibles;
   const seleccionado = products.find((p) => p.id === value);
   const [query, setQuery] = useState(seleccionado?.nombre || "");
   const [open, setOpen] = useState(false);
@@ -932,7 +938,13 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
         <div onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); agregarAlCarrito(); } }}>
           <FechaField label="Fecha" value={fecha} onChange={setFecha} />
           <div className="ec-field"><label>Categoría</label>
-            <select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
+            <select value={categoria} onChange={(e) => {
+              const nueva = e.target.value;
+              setCategoria(nueva);
+              // Si el producto elegido no tiene precio en la nueva categoría, se limpia la elección.
+              const sel = products.find((p) => p.id === productoId);
+              if (sel && !db.tienePrecio(sel, nueva)) setProductoId("");
+            }}>
               {db.CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
@@ -959,7 +971,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
             {products.length === 0 ? (
               <input disabled value="Sin productos cargados" />
             ) : (
-              <ProductPicker products={products} value={productoId} onChange={setProductoId} placeholder="Escribí para buscar un producto..." />
+              <ProductPicker products={products} categoria={categoria} value={productoId} onChange={setProductoId} placeholder="Escribí para buscar un producto..." />
             )}
           </div>
           <div className="ec-row2">
@@ -1031,13 +1043,17 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                                   {editandoLinea === l.fila ? (
                                     <div style={{ margin: "8px 0", padding: 10, background: TOKENS.cream, borderRadius: 8 }}>
                                       <div className="ec-field"><label>Categoría</label>
-                                        <select value={edLinea.categoria} onChange={(e) => setEdLinea({ ...edLinea, categoria: e.target.value })}>
+                                        <select value={edLinea.categoria} onChange={(e) => {
+                                          const nueva = e.target.value;
+                                          const sel = products.find((p) => p.id === edLinea.productoId);
+                                          setEdLinea({ ...edLinea, categoria: nueva, productoId: sel && !db.tienePrecio(sel, nueva) ? "" : edLinea.productoId });
+                                        }}>
                                           {db.CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
                                         </select>
                                       </div>
                                       <div className="ec-field"><label>Cliente</label><input value={edLinea.cliente} onChange={(e) => setEdLinea({ ...edLinea, cliente: e.target.value })} /></div>
                                       <div className="ec-field"><label>Producto</label>
-                                        <ProductPicker products={products} value={edLinea.productoId} onChange={(v) => setEdLinea({ ...edLinea, productoId: v })} placeholder="Escribí para buscar..." />
+                                        <ProductPicker products={products} categoria={edLinea.categoria} value={edLinea.productoId} onChange={(v) => setEdLinea({ ...edLinea, productoId: v })} placeholder="Escribí para buscar..." />
                                       </div>
                                       <div className="ec-field"><label>Unidades</label><input type="number" min="1" value={edLinea.unidades} onChange={(e) => setEdLinea({ ...edLinea, unidades: e.target.value })} /></div>
                                       {errorLinea && <div className="ec-error">{errorLinea}</div>}
@@ -1449,7 +1465,18 @@ function RendicionesTab({ vendor, rendiciones, error, onChanged }) {
   if (error) return <div className="ec-error">{error}</div>;
   if (rendiciones === null) return <Spinner label="Cargando rendiciones..." />;
 
-  const badgeClase = (c) => (c === "A" ? "ec-badge-a" : c === "B" ? "ec-badge-b" : c === "C" ? "ec-badge-c" : "ec-badge-pend");
+  // Rendición pagada: un cuadradito de color según el estado de pago (A verde, B amarillo, C rojo).
+  // Rendición impaga: la etiqueta PENDIENTE.
+  const COLOR_PAGO = { A: "#2E9E5B", B: "#F2B01E", C: "#D64545" };
+  const TITULO_PAGO = { A: "Pagada a término", B: "Pagada con demora intermedia", C: "Pagada fuera de término" };
+  const estadoDePago = (r) => {
+    const letra = String(r.estadoColor || "").trim().toUpperCase();
+    if (COLOR_PAGO[letra]) return (
+      <span title={TITULO_PAGO[letra]} aria-label={TITULO_PAGO[letra]} style={{ display: "inline-block", width: 18, height: 18, borderRadius: 4, background: COLOR_PAGO[letra], flexShrink: 0 }} />
+    );
+    if (String(r.montoPagado || "").trim() !== "") return null; // tiene un pago cargado pero todavía sin estado
+    return <span className="ec-badge ec-badge-pend">PENDIENTE</span>;
+  };
 
   return (
     <>
@@ -1464,7 +1491,7 @@ function RendicionesTab({ vendor, rendiciones, error, onChanged }) {
           <div className="ec-pedido-row" key={i}>
             <div className="ec-pedido-top">
               <div><div className="ec-pedido-cliente">{r.fecha}</div><div className="ec-pedido-meta">Vendido {r.totalVendido} · Comisión {r.comision}</div></div>
-              <span className={`ec-badge ${badgeClase(r.estadoColor)}`}>{r.estadoColor || r.estado}</span>
+              {estadoDePago(r)}
             </div>
             <div className="ec-linea"><span>Transferencias</span><span>{r.transferencias}</span></div>
             <div className="ec-linea"><span>Envío</span><span>{r.envio}</span></div>
