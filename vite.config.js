@@ -9,7 +9,9 @@ export default defineConfig({
       strategies: "injectManifest",
       srcDir: "src",
       filename: "sw.js",
-      registerType: "autoUpdate",
+      // "prompt": el plugin no recarga la app por su cuenta; la recarga y el cartel de
+      // actualización los maneja la propia app (así nunca se corta un pedido a medias).
+      registerType: "prompt",
       includeAssets: ["apple-touch-icon.png"],
       manifest: {
         name: "El Castaño · Vendedores",
