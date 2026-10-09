@@ -792,7 +792,9 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
   // Si la línea ya no está pendiente (la agarró administración), avisamos
   // con la alerta en vez de dejar tocar nada.
   const intentarTocarLinea = (l) => {
-    if (l.estado !== "PENDIENTE") {
+    // Una línea sin estado y sin fecha de despacho nunca se tocó (p. ej. quedó a medias): se puede editar o anular.
+    const sinEstado = String(l.estado || "").trim() === "" && !l.fechaDespacho;
+    if (l.estado !== "PENDIENTE" && !sinEstado) {
       alert("Este pedido ya está en proceso. Para modificarlo o anularlo, contactate con administración.");
       return false;
     }
@@ -825,7 +827,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
 
   const anularLinea = async (l) => {
     if (!intentarTocarLinea(l)) return;
-    if (!confirm(`¿Anular el pedido de ${l.producto} × ${l.unidades} para ${l.cliente}?`)) return;
+    if (!confirm(l.producto ? `¿Anular el pedido de ${l.producto} × ${l.unidades} para ${l.cliente}?` : `¿Borrar esta línea vacía de ${l.cliente}?`)) return;
     setAnulandoFila(l.fila);
     try { await sheets.anularPedidoSheet(vendor.sheetUrl, mesVista, l.fila, { cliente: l.cliente, producto: l.producto }); await refrescar(); }
     catch (e) {
