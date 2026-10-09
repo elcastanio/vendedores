@@ -115,6 +115,12 @@ function Spinner({ label }) {
   );
 }
 
+// Solo el primer nombre, con la primera letra en mayúscula ("EUGENIA GALOTTO" -> "Eugenia").
+function nombreCorto(nombre) {
+  const p = String(nombre || "").trim().split(/\s+/)[0] || "";
+  return p.charAt(0).toLocaleUpperCase("es") + p.slice(1).toLocaleLowerCase("es");
+}
+
 // Saludo según la hora en Argentina: día hasta las 12, tarde hasta las 20, noche el resto.
 function saludoSegunHora() {
   const hora = Number(new Date().toLocaleString("en-GB", { hour: "2-digit", hour12: false, timeZone: "America/Argentina/Buenos_Aires" }).slice(0, 2));
@@ -341,7 +347,7 @@ function VendorApp({ vendor, products, onLogout }) {
   return (
     <div className="ec-shell">
       <div className="ec-topbar">
-        <div><img src="/logo.png" alt="El Castaño" style={{ height: 22 }} /><div className="ec-sub" style={{ marginTop: 4 }}>{saludoSegunHora()}, {vendor.nombre}</div></div>
+        <div><img src="/logo.png" alt="El Castaño" style={{ height: 22 }} /><div className="ec-sub" style={{ marginTop: 4 }}>{saludoSegunHora()}, {nombreCorto(vendor.nombre)}</div></div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button className="ec-btn ec-btn-ghost" style={{ position: "relative" }} onClick={() => { setTab("avisos"); setAvisoAbierto(null); }} aria-label="Avisos">
             <Bell size={14} />
