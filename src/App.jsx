@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import {
   ClipboardList, Target, Package, Wallet, LogOut, Plus, Check, X, Loader2,
   ShieldCheck, Users, Boxes, ListChecks, ChevronRight, AlertTriangle, Upload,
-  ExternalLink, RefreshCw, Bell, BellOff, Pencil, FileDown, Trash2,
+  ExternalLink, RefreshCw, Bell, BellOff, Pencil, FileDown, Trash2, Search,
 } from "lucide-react";
 import * as db from "./db";
 import * as sheets from "./sheetsClient";
@@ -683,6 +683,10 @@ function ResumenDespacho({ faltantes, despacho }) {
 function hoyAR() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" });
 }
+// Para buscar sin importar mayúsculas ni tildes.
+function normalizarBusqueda(t) {
+  return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
 function etiquetaDespacho(fecha) {
   const [, m, d] = String(fecha).split("-");
   return `Despacho del ${Number(d)}/${Number(m)}`;
@@ -739,6 +743,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
   const [mesConsulta, setMesConsulta] = useState(mesRealClave);
   const [pedidosPropios, setPedidosPropios] = useState(null);
   const [errorPropio, setErrorPropio] = useState("");
+  const [busqueda, setBusqueda] = useState("");
 
   // Avisa a la actualización automática que hay algo a medias (no recargar en este momento).
   useEffect(() => {
@@ -932,8 +937,120 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
       g.ordenKeys.forEach((ok) => (pendientesPorPedido.get(ok) || []).forEach((l) => sumarFaltante(m, l.producto, Number(l.unidades) || 0)));
       return { ...g, faltantes: textoFaltantes(m) };
     });
-    return { gruposPendientes, semanasCompletas };
+    return { gruposPendientes, semanasCompletas, ordenes };
   }, [pedidosDelMes, mesConsulta]);
+
+  // Una línea de pedido (con edición y anulación). En el buscador, las líneas que ya no se pueden tocar van en solo lectura.
+  const renderLinea = (l, soloLectura = false) => (
+    <div key={l.fila}>
+                                  {editandoLinea === l.fila ? (
+                                    <div style={{ margin: "8px 0", padding: 10, background: TOKENS.cream, borderRadius: 8 }}>
+                                      <div className="ec-field"><label>Categoría</label>
+                                        <select value={edLinea.categoria} onChange={(e) => {
+                                          const nueva = e.target.value;
+                                          const sel = products.find((p) => p.id === edLinea.productoId);
+                                          setEdLinea({ ...edLinea, categoria: nueva, productoId: sel && !db.tienePrecio(sel, nueva) ? "" : edLinea.productoId });
+                                        }}>
+                                          {db.CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
+                                        </select>
+                                      </div>
+                                      <div className="ec-field"><label>Cliente</label><input value={edLinea.cliente} onChange={(e) => setEdLinea({ ...edLinea, cliente: e.target.value })} /></div>
+                                      <div className="ec-field"><label>Producto</label>
+                                        <ProductPicker products={products} categoria={edLinea.categoria} value={edLinea.productoId} onChange={(v) => setEdLinea({ ...edLinea, productoId: v })} placeholder="Escribí para buscar..." />
+                                      </div>
+                                      <div className="ec-field"><label>Unidades</label><input type="number" min="1" value={edLinea.unidades} onChange={(e) => setEdLinea({ ...edLinea, unidades: e.target.value })} /></div>
+                                      {errorLinea && <div className="ec-error">{errorLinea}</div>}
+                                      <div className="ec-row-actions">
+                                        <button className="ec-btn ec-btn-primary" disabled={guardandoLinea} onClick={() => guardarEdicionLinea(l)}>
+                                          {guardandoLinea ? <Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check size={14} />} Guardar
+                                        </button>
+                                        <button className="ec-btn ec-btn-ghost" onClick={() => setEditandoLinea(null)}>Cancelar</button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <div className="ec-linea">
+                                        <span>{l.producto} × {unidadesEntregadas(l)} {l.estado === "DESPACHADO" ? "✓" : l.estado === "EN PROCESO" ? "⏳" : ""}{Number(l.precio) > 0 && <span style={{ color: TOKENS.textSoft, fontSize: 12 }}> · {fmtMoney(l.precio)} c/u</span>}</span>
+                                        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                          {fmtMoney(l.total)}
+                                          {anulandoFila === l.fila ? (
+                                            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: TOKENS.danger, fontSize: 12 }}><Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} />Borrando...</span>
+                                          ) : !soloLectura ? (
+                                            <>
+                                              <button type="button" disabled={anulandoFila !== null} onClick={() => empezarEdicion(l)} style={{ background: "none", border: "none", cursor: anulandoFila !== null ? "default" : "pointer", opacity: anulandoFila !== null ? 0.35 : 1, color: TOKENS.textSoft, padding: 0 }} aria-label="Editar"><Pencil size={13} /></button>
+                                              <button type="button" disabled={anulandoFila !== null} onClick={() => anularLinea(l)} style={{ background: "none", border: "none", cursor: anulandoFila !== null ? "default" : "pointer", opacity: anulandoFila !== null ? 0.35 : 1, color: TOKENS.danger, padding: 0 }} aria-label="Anular"><X size={14} /></button>
+                                            </>
+                                          ) : null}
+                                        </span>
+                                      </div>
+                                      {unidadesFalt(l) > 0 && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Faltan {unidadesFalt(l)} de {l.unidades} u.: {l.producto}</div>}
+                                    </>
+                                  )}
+                                </div>
+  );
+
+  // Buscador de clientes: todos los pedidos del mes de quien coincida con lo escrito.
+  const terminoBusqueda = normalizarBusqueda(busqueda);
+  const lineaEditable = (l) => l.estado === "PENDIENTE" || (String(l.estado || "").trim() === "" && !l.fechaDespacho);
+  let vistaBusqueda = null;
+  if (terminoBusqueda && vista) {
+    const palabras = terminoBusqueda.split(/\s+/).filter(Boolean);
+    const coinciden = vista.ordenes.filter((o) => {
+      const c = normalizarBusqueda(o.cliente);
+      return palabras.every((w) => c.includes(w));
+    });
+    const porCliente = new Map();
+    [...coinciden].reverse().forEach((o) => { // los más recientes primero
+      if (!porCliente.has(o.cliente)) porCliente.set(o.cliente, []);
+      porCliente.get(o.cliente).push(o);
+    });
+    vistaBusqueda = coinciden.length === 0 ? (
+      <div className="ec-empty">No encontré pedidos de “{busqueda.trim()}” en {mesVista}.</div>
+    ) : (
+      <>
+        <div style={{ fontSize: 12.5, color: TOKENS.textSoft, margin: "0 2px 8px" }}>
+          {coinciden.length} pedido(s) de {porCliente.size} cliente(s) en {mesVista}
+        </div>
+        {Array.from(porCliente.entries()).map(([nombreCliente, ordenesCliente]) => {
+          const totalCliente = ordenesCliente.reduce((acc, o) => acc + o.lineas.reduce((a2, l) => a2 + Number(l.total || 0), 0), 0);
+          return (
+            <div className="ec-pedido-row" key={nombreCliente}>
+              <div className="ec-pedido-top">
+                <div>
+                  <div className="ec-pedido-cliente">{nombreCliente}</div>
+                  <div className="ec-pedido-meta">{ordenesCliente.length} pedido(s) · {fmtMoney(totalCliente)}</div>
+                </div>
+              </div>
+              <div style={{ marginTop: 10, borderTop: `1px solid ${TOKENS.border}`, paddingTop: 8 }}>
+                {ordenesCliente.map((g, i) => {
+                  const subtotal = g.lineas.reduce((acc, l) => acc + Number(l.total || 0), 0);
+                  const fechasDesp = Array.from(new Set(g.lineas.filter((l) => l.despachado && l.fechaDespacho).map((l) => l.fechaDespacho))).map(etiquetaDespacho).join(" · ");
+                  return (
+                    <div key={g.dia + "-" + i} style={{ marginBottom: 12 }}>
+                      <div className="ec-pedido-top">
+                        <div>
+                          <div className="ec-pedido-meta" style={{ fontWeight: 600 }}>Día {g.dia} · {g.categoria}</div>
+                          {fechasDesp && <div className="ec-pedido-meta">{fechasDesp}</div>}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <button type="button" onClick={() => descargarPdf(g)} disabled={descargando === g.cliente + "-" + g.dia} className="ec-btn ec-btn-ghost" style={{ padding: "5px 8px" }} aria-label="Descargar comprobante">
+                            {descargando === g.cliente + "-" + g.dia ? <Loader2 size={13} style={{ animation: "spin 0.9s linear infinite" }} /> : <FileDown size={13} />}
+                          </button>
+                          <span className={`ec-badge ${claseBadgeEstado(estadoAgregado(g.lineas))}`}>{etiquetaEstado(estadoAgregado(g.lineas))}</span>
+                        </div>
+                      </div>
+                      {g.lineas.map((l) => renderLinea(l, !lineaEditable(l)))}
+                      <div className="ec-subtotal"><span>Subtotal</span><span>{fmtMoney(subtotal)}</span></div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </>
+    );
+  }
 
   if (!vendor.sheetUrl) return null;
 
@@ -1004,10 +1121,22 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
           <button className="ec-btn ec-btn-ghost" style={{ padding: "5px 9px" }} onClick={refrescar}><RefreshCw size={13} /></button>
         </div>
         <MesField value={mesConsulta} onChange={setMesConsulta} />
+        <div className="ec-field" style={{ marginTop: 10, marginBottom: 0 }}>
+          <label>Buscar cliente</label>
+          <div style={{ position: "relative" }}>
+            <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: TOKENS.textSoft, pointerEvents: "none" }} />
+            <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Nombre del cliente..." style={{ paddingLeft: 32, paddingRight: 32 }} />
+            {busqueda && (
+              <button type="button" onClick={() => setBusqueda("")} aria-label="Borrar búsqueda" style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: TOKENS.textSoft, padding: 4 }}>
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {errorDelMes && <div className="ec-error">{errorDelMes}</div>}
-      {vista === null ? <Spinner label="Cargando pedidos de la planilla..." /> : (vista.gruposPendientes.length === 0 && vista.semanasCompletas.length === 0) ? (
+      {vistaBusqueda ? vistaBusqueda : vista === null ? <Spinner label="Cargando pedidos de la planilla..." /> : (vista.gruposPendientes.length === 0 && vista.semanasCompletas.length === 0) ? (
         <div className="ec-empty">Todavía no hay pedidos cargados en {mesVista}.</div>
       ) : (
         <>
@@ -1046,52 +1175,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                                   <span className={`ec-badge ${claseBadgeEstado(estadoAgregado(g.lineas))}`}>{etiquetaEstado(estadoAgregado(g.lineas))}</span>
                                 </div>
                               </div>
-                              {g.lineas.map((l) => (
-                                <div key={l.fila}>
-                                  {editandoLinea === l.fila ? (
-                                    <div style={{ margin: "8px 0", padding: 10, background: TOKENS.cream, borderRadius: 8 }}>
-                                      <div className="ec-field"><label>Categoría</label>
-                                        <select value={edLinea.categoria} onChange={(e) => {
-                                          const nueva = e.target.value;
-                                          const sel = products.find((p) => p.id === edLinea.productoId);
-                                          setEdLinea({ ...edLinea, categoria: nueva, productoId: sel && !db.tienePrecio(sel, nueva) ? "" : edLinea.productoId });
-                                        }}>
-                                          {db.CATEGORIAS.map((c) => <option key={c} value={c}>{c}</option>)}
-                                        </select>
-                                      </div>
-                                      <div className="ec-field"><label>Cliente</label><input value={edLinea.cliente} onChange={(e) => setEdLinea({ ...edLinea, cliente: e.target.value })} /></div>
-                                      <div className="ec-field"><label>Producto</label>
-                                        <ProductPicker products={products} categoria={edLinea.categoria} value={edLinea.productoId} onChange={(v) => setEdLinea({ ...edLinea, productoId: v })} placeholder="Escribí para buscar..." />
-                                      </div>
-                                      <div className="ec-field"><label>Unidades</label><input type="number" min="1" value={edLinea.unidades} onChange={(e) => setEdLinea({ ...edLinea, unidades: e.target.value })} /></div>
-                                      {errorLinea && <div className="ec-error">{errorLinea}</div>}
-                                      <div className="ec-row-actions">
-                                        <button className="ec-btn ec-btn-primary" disabled={guardandoLinea} onClick={() => guardarEdicionLinea(l)}>
-                                          {guardandoLinea ? <Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check size={14} />} Guardar
-                                        </button>
-                                        <button className="ec-btn ec-btn-ghost" onClick={() => setEditandoLinea(null)}>Cancelar</button>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <div className="ec-linea">
-                                        <span>{l.producto} × {unidadesEntregadas(l)} {l.estado === "DESPACHADO" ? "✓" : l.estado === "EN PROCESO" ? "⏳" : ""}{Number(l.precio) > 0 && <span style={{ color: TOKENS.textSoft, fontSize: 12 }}> · {fmtMoney(l.precio)} c/u</span>}</span>
-                                        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                          {fmtMoney(l.total)}
-                                          {anulandoFila === l.fila ? (
-                                            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: TOKENS.danger, fontSize: 12 }}><Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} />Borrando...</span>
-                                          ) : (
-                                            <>
-                                              <button type="button" disabled={anulandoFila !== null} onClick={() => empezarEdicion(l)} style={{ background: "none", border: "none", cursor: anulandoFila !== null ? "default" : "pointer", opacity: anulandoFila !== null ? 0.35 : 1, color: TOKENS.textSoft, padding: 0 }} aria-label="Editar"><Pencil size={13} /></button>
-                                              <button type="button" disabled={anulandoFila !== null} onClick={() => anularLinea(l)} style={{ background: "none", border: "none", cursor: anulandoFila !== null ? "default" : "pointer", opacity: anulandoFila !== null ? 0.35 : 1, color: TOKENS.danger, padding: 0 }} aria-label="Anular"><X size={14} /></button>
-                                            </>
-                                          )}
-                                        </span>
-                                      </div>
-                                      {unidadesFalt(l) > 0 && <div className="ec-note warn"><AlertTriangle size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Faltan {unidadesFalt(l)} de {l.unidades} u.: {l.producto}</div>}
-                                    </>
-                                  )}
-                                </div>
+                              {g.lineas.map((l) => renderLinea(l))}
                               ))}
                               <div className="ec-subtotal"><span>Subtotal</span><span>{fmtMoney(subtotal)}</span></div>
                             </div>
