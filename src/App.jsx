@@ -747,6 +747,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
   const [errorPropio, setErrorPropio] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [renombrando, setRenombrando] = useState(null); // { clave, valor, guardando, error }
+  const [agregando, setAgregando] = useState(null); // { clave, productoId, unidades, enStock, guardando, error }
 
   // Avisa a la actualización automática que hay algo a medias (no recargar en este momento).
   useEffect(() => {
@@ -1042,6 +1043,53 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
     </div>
   ) : null);
 
+  // Sumar un producto a un pedido ya cargado (solo si todas sus líneas siguen pendientes).
+  const botonAgregar = (g) => (puedeRenombrar(g) && !(agregando && agregando.clave === claveOrden(g)) ? (
+    <button type="button" className="ec-btn ec-btn-ghost" style={{ margin: "6px 0", padding: "5px 10px", fontSize: 12 }}
+      onClick={() => setAgregando({ clave: claveOrden(g), productoId: "", unidades: "", enStock: false, guardando: false, error: "" })}>
+      <Plus size={13} /> Agregar producto a este pedido
+    </button>
+  ) : null);
+  const guardarAgregado = async (g) => {
+    const prod = products.find((p) => p.id === agregando.productoId);
+    const unid = Number(agregando.unidades);
+    if (!prod || !(unid > 0)) { setAgregando({ ...agregando, error: "Elegí un producto y unidades (mayor a 0)." }); return; }
+    const lineas = lineasDelPedido(g);
+    const ultima = lineas[lineas.length - 1];
+    setAgregando({ ...agregando, guardando: true, error: "" });
+    try {
+      const r = await sheets.agregarLineaPedidoSheet(vendor.sheetUrl, mesVista, {
+        filaRef: ultima.fila, cliente: g.cliente, productoRef: ultima.producto,
+        producto: prod.nombre, unidades: unid, precio: db.precioProducto(prod, g.categoria), enStock: agregando.enStock,
+      });
+      if (agregando.enStock && r && r.stockActualizado === false) alert("Producto agregado. Ojo: no encontré ese producto en tu solapa Stock (\"A la venta\"), revisalo a mano.");
+      await refrescar();
+      setAgregando(null);
+    } catch (e) {
+      if (/load failed|failed to fetch|networkerror/i.test(e.message || "")) { await refrescar(); setAgregando(null); }
+      else setAgregando((x) => (x ? { ...x, guardando: false, error: e.message } : x));
+    }
+  };
+  const editorAgregar = (g) => (agregando && agregando.clave === claveOrden(g) ? (
+    <div style={{ margin: "8px 0", padding: 10, background: TOKENS.cream, borderRadius: 8 }}>
+      <div className="ec-field"><label>Producto a sumar</label>
+        <ProductPicker products={products} categoria={g.categoria} value={agregando.productoId} onChange={(v) => setAgregando({ ...agregando, productoId: v })} placeholder="Escribí para buscar un producto..." />
+        <label style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 500, cursor: "pointer", width: "auto" }}>
+          <span>Lo tengo en stock</span>
+          <input type="checkbox" checked={agregando.enStock} onChange={(e) => setAgregando({ ...agregando, enStock: e.target.checked })} style={{ width: 18, height: 18, padding: 0, margin: 0, flex: "none" }} />
+        </label>
+      </div>
+      <div className="ec-field"><label>Unidades</label><input type="number" min="1" value={agregando.unidades} onChange={(e) => setAgregando({ ...agregando, unidades: e.target.value })} /></div>
+      {agregando.error && <div className="ec-error">{agregando.error}</div>}
+      <div className="ec-row-actions">
+        <button className="ec-btn ec-btn-primary" disabled={agregando.guardando} onClick={() => guardarAgregado(g)}>
+          {agregando.guardando ? <Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check size={14} />} Agregar
+        </button>
+        <button className="ec-btn ec-btn-ghost" disabled={agregando.guardando} onClick={() => setAgregando(null)}>Cancelar</button>
+      </div>
+    </div>
+  ) : null);
+
   let vistaBusqueda = null;
   if (terminoBusqueda && vista) {
     const palabras = terminoBusqueda.split(/\s+/).filter(Boolean);
@@ -1091,6 +1139,8 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                       </div>
                       {editorRenombre(g)}
                       {g.lineas.map((l) => renderLinea(l, !lineaEditable(l)))}
+                      {botonAgregar(g)}
+                      {editorAgregar(g)}
                       <div className="ec-subtotal"><span>Subtotal</span><span>{fmtMoney(subtotal)}</span></div>
                     </div>
                   );
@@ -1232,6 +1282,8 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                               </div>
                               {editorRenombre(g)}
                               {g.lineas.map((l) => renderLinea(l))}
+                              {botonAgregar(g)}
+                              {editorAgregar(g)}
                               <div className="ec-subtotal"><span>Subtotal</span><span>{fmtMoney(subtotal)}</span></div>
                             </div>
                           );
