@@ -125,3 +125,9 @@ export async function anularPedidoSheet(sheetUrl, mes, fila, { cliente, producto
   const sheetId = extraerSheetId(sheetUrl);
   return llamar("anularPedido", { sheetId, mes, fila, cliente, producto });
 }
+
+// Suma un producto a un pedido ya cargado (se inserta debajo de su última línea).
+export async function agregarLineaPedidoSheet(sheetUrl, mes, { filaRef, cliente, productoRef, producto, unidades, precio, enStock }) {
+  const sheetId = extraerSheetId(sheetUrl);
+  return llamar("agregarLineaPedido", { sheetId, mes, filaRef, cliente, productoRef, producto, unidades, precio, enStock: !!enStock });
+}
