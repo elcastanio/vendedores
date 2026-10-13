@@ -471,3 +471,56 @@ export async function descargarResumenDespacho(datos) {
   const { doc, nombreArchivo } = await armarResumenDespacho(datos);
   await compartirODescargar(doc, nombreArchivo);
 }
+
+
+// ---------------------------------------------------------------------------
+// Términos y condiciones firmados (con DNI y firma dibujada en pantalla).
+// ---------------------------------------------------------------------------
+export async function descargarTerminosFirmados({ titulo, clausulas, version, nombre, dni, firma, aceptadoEn }) {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageW = 595, pageH = 842, margen = 56, ancho = pageW - margen * 2;
+  const limiteY = pageH - 70;
+  let y = 60;
+
+  try {
+    const logo = await cargarLogo();
+    doc.addImage(logo, "PNG", margen, y - 14, 90, 28);
+  } catch (e) { /* sin logo */ }
+  y += 36;
+
+  const nuevaPaginaSiHaceFalta = (alto) => { if (y + alto > limiteY) { doc.addPage(); y = 60; } };
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.setTextColor(...TEXT);
+  doc.splitTextToSize(titulo, ancho).forEach((l) => { doc.text(l, margen, y); y += 20; });
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(...TEXT_SOFT);
+  doc.text(`Versión ${version}`, margen, y); y += 22;
+
+  clausulas.forEach(([tit, texto]) => {
+    const lineas = doc.splitTextToSize(texto, ancho);
+    nuevaPaginaSiHaceFalta(16 + lineas.length * 13 + 10);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); doc.setTextColor(...TEXT);
+    doc.text(tit, margen, y); y += 15;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(...TEXT);
+    lineas.forEach((l) => { doc.text(l, margen, y); y += 13; });
+    y += 9;
+  });
+
+  // Bloque de firma (siempre completo en una misma página)
+  nuevaPaginaSiHaceFalta(190);
+  y += 6;
+  doc.setDrawColor(...BORDER); doc.setLineWidth(1); doc.line(margen, y, margen + ancho, y); y += 22;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); doc.setTextColor(...TEXT);
+  doc.text("Aceptado y firmado por el vendedor", margen, y); y += 18;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10);
+  const fechaTxt = new Date(aceptadoEn).toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", dateStyle: "long", timeStyle: "short" });
+  doc.text(`Nombre: ${nombre}`, margen, y); y += 14;
+  doc.text(`DNI: ${dni}`, margen, y); y += 14;
+  doc.text(`Fecha y hora: ${fechaTxt}`, margen, y); y += 12;
+  try { doc.addImage(firma, "PNG", margen, y, 200, 80); } catch (e) { /* firma ilegible */ }
+  y += 84;
+  doc.setDrawColor(...TEXT_SOFT); doc.line(margen, y, margen + 220, y); y += 12;
+  doc.setFontSize(8.5); doc.setTextColor(...TEXT_SOFT); doc.text("Firma", margen, y);
+
+  const nombreArchivo = `Terminos y condiciones - ${nombre}.pdf`.replace(/[\\/:*?"<>|]/g, "");
+  await compartirODescargar(doc, nombreArchivo);
+}
