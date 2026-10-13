@@ -7,7 +7,8 @@ import {
 } from "lucide-react";
 import * as db from "./db";
 import * as sheets from "./sheetsClient";
-import { descargarComprobantePedido, descargarResumenDespacho } from "./pdfTicket";
+import { descargarComprobantePedido, descargarResumenDespacho, descargarTerminosFirmados } from "./pdfTicket";
+import { TERMINOS_VERSION, TERMINOS_TITULO, TERMINOS_CLAUSULAS } from "./terminos";
 import { soportaPush, suscribirVendedor, yaEstaSuscripto, registrarSiYaSuscripto } from "./push";
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "castano2026";
@@ -731,6 +732,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
   const [cliente, setCliente] = useState("");
   const [productoId, setProductoId] = useState("");
   const [unidades, setUnidades] = useState("");
+  const [loTengoEnStock, setLoTengoEnStock] = useState(false);
   const [carrito, setCarrito] = useState([]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
@@ -744,12 +746,13 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
   const [pedidosPropios, setPedidosPropios] = useState(null);
   const [errorPropio, setErrorPropio] = useState("");
   const [busqueda, setBusqueda] = useState("");
+  const [renombrando, setRenombrando] = useState(null); // { clave, valor, guardando, error }
 
   // Avisa a la actualización automática que hay algo a medias (no recargar en este momento).
   useEffect(() => {
-    window.__ecOcupado = carrito.length > 0 || cliente.trim() !== "" || editandoLinea !== null;
+    window.__ecOcupado = carrito.length > 0 || cliente.trim() !== "" || editandoLinea !== null || renombrando !== null;
     return () => { window.__ecOcupado = false; };
-  }, [carrito, cliente, editandoLinea]);
+  }, [carrito, cliente, editandoLinea, renombrando]);
 
   const mesActual = sheets.mesDeFecha(fecha); // mes al que se escribe el pedido nuevo
   const mesVista = sheets.nombreMesDeValor(mesConsulta); // mes que se muestra en la lista de abajo
@@ -787,9 +790,11 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
       unidades: Number(unidades),
       precio,
       total: totalLinea,
+      enStock: loTengoEnStock,
     }]);
     setProductoId("");
     setUnidades("");
+    setLoTengoEnStock(false);
   };
 
   const quitarDelCarrito = (id) => setCarrito(carrito.filter((l) => l.id !== id));
@@ -866,11 +871,14 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
     if (carrito.length === 0) { setError("Agregá al menos un producto al pedido."); return; }
     setGuardando(true);
     try {
+      const sinStock = [];
       for (const linea of carrito) {
-        await sheets.addPedidoSheet(vendor.sheetUrl, {
-          fecha, categoria, cliente: cliente.trim(), producto: linea.productoNombre, unidades: linea.unidades, precio: linea.precio,
+        const r = await sheets.addPedidoSheet(vendor.sheetUrl, {
+          fecha, categoria, cliente: cliente.trim(), producto: linea.productoNombre, unidades: linea.unidades, precio: linea.precio, enStock: linea.enStock,
         });
+        if (linea.enStock && r && r.stockActualizado === false) sinStock.push(linea.productoNombre);
       }
+      if (sinStock.length) alert("Pedido guardado. Ojo: no encontré en tu solapa Stock (\"A la venta\") estos productos, revisalos a mano: " + sinStock.join(", "));
       setCliente("");
       setCarrito([]);
       // Si el pedido se cargó en el mismo mes que se está viendo abajo, lo refrescamos.
@@ -911,7 +919,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
       const pend = orden.lineas.filter((l) => !l.despachado);
       if (pend.length > 0) {
         if (!pendientesPorSemana.has(key)) pendientesPorSemana.set(key, { key, label, ordenes: [] });
-        pendientesPorSemana.get(key).ordenes.push({ ...orden, lineas: pend });
+        pendientesPorSemana.get(key).ordenes.push({ ...orden, lineas: pend, lineasOrden: orden.lineas });
         pendientesPorPedido.set(ordenKey, [...(pendientesPorPedido.get(ordenKey) || []), ...pend]);
       }
       const porGrupo = new Map();
@@ -992,6 +1000,48 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
   // Buscador de clientes: todos los pedidos del mes de quien coincida con lo escrito.
   const terminoBusqueda = normalizarBusqueda(busqueda);
   const lineaEditable = (l) => l.estado === "PENDIENTE" || (String(l.estado || "").trim() === "" && !l.fechaDespacho);
+  // Corregir el nombre del cliente de un pedido (todas sus líneas). Solo si todas siguen pendientes.
+  const lineasDelPedido = (g) => g.lineasOrden || g.lineas;
+  const claveOrden = (g) => `${g.dia}|${g.cliente}|${lineasDelPedido(g)[0].fila}`;
+  const puedeRenombrar = (g) => lineasDelPedido(g).every(lineaEditable);
+  const botonRenombrar = (g) => (puedeRenombrar(g) ? (
+    <button type="button" aria-label="Corregir nombre del cliente" onClick={() => setRenombrando({ clave: claveOrden(g), valor: g.cliente, guardando: false, error: "" })}
+      style={{ background: "none", border: "none", cursor: "pointer", color: TOKENS.textSoft, padding: "0 0 0 8px", verticalAlign: "middle" }}>
+      <Pencil size={12} />
+    </button>
+  ) : null);
+  const guardarRenombre = async (g) => {
+    const nuevo = renombrando.valor.trim();
+    if (!nuevo) { setRenombrando({ ...renombrando, error: "Escribí el nombre del cliente." }); return; }
+    if (nuevo === g.cliente) { setRenombrando(null); return; }
+    setRenombrando({ ...renombrando, guardando: true, error: "" });
+    try {
+      await sheets.renombrarClienteSheet(vendor.sheetUrl, mesVista, {
+        lineas: lineasDelPedido(g).map((l) => ({ fila: l.fila, producto: l.producto })),
+        clienteAnterior: g.cliente, clienteNuevo: nuevo,
+      });
+      await refrescar();
+      setRenombrando(null);
+    } catch (e) {
+      if (/load failed|failed to fetch|networkerror/i.test(e.message || "")) { await refrescar(); setRenombrando(null); }
+      else setRenombrando((r) => (r ? { ...r, guardando: false, error: e.message } : r));
+    }
+  };
+  const editorRenombre = (g) => (renombrando && renombrando.clave === claveOrden(g) ? (
+    <div style={{ margin: "8px 0", padding: 10, background: TOKENS.cream, borderRadius: 8 }}>
+      <div className="ec-field"><label>Nombre del cliente</label>
+        <input value={renombrando.valor} onChange={(e) => setRenombrando({ ...renombrando, valor: e.target.value })} />
+      </div>
+      {renombrando.error && <div className="ec-error">{renombrando.error}</div>}
+      <div className="ec-row-actions">
+        <button className="ec-btn ec-btn-primary" disabled={renombrando.guardando} onClick={() => guardarRenombre(g)}>
+          {renombrando.guardando ? <Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check size={14} />} Guardar
+        </button>
+        <button className="ec-btn ec-btn-ghost" disabled={renombrando.guardando} onClick={() => setRenombrando(null)}>Cancelar</button>
+      </div>
+    </div>
+  ) : null);
+
   let vistaBusqueda = null;
   if (terminoBusqueda && vista) {
     const palabras = terminoBusqueda.split(/\s+/).filter(Boolean);
@@ -1029,7 +1079,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                     <div key={g.dia + "-" + i} style={{ marginBottom: 12 }}>
                       <div className="ec-pedido-top">
                         <div>
-                          <div className="ec-pedido-meta" style={{ fontWeight: 600 }}>Día {g.dia} · {g.categoria}</div>
+                          <div className="ec-pedido-meta" style={{ fontWeight: 600 }}>Día {g.dia} · {g.categoria}{botonRenombrar(g)}</div>
                           {fechasDesp && <div className="ec-pedido-meta">{fechasDesp}</div>}
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1039,6 +1089,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                           <span className={`ec-badge ${claseBadgeEstado(estadoAgregado(g.lineas))}`}>{etiquetaEstado(estadoAgregado(g.lineas))}</span>
                         </div>
                       </div>
+                      {editorRenombre(g)}
                       {g.lineas.map((l) => renderLinea(l, !lineaEditable(l)))}
                       <div className="ec-subtotal"><span>Subtotal</span><span>{fmtMoney(subtotal)}</span></div>
                     </div>
@@ -1079,7 +1130,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
             <div style={{ marginBottom: 12 }}>
               {carrito.map((l) => (
                 <div className="ec-linea" key={l.id}>
-                  <span>{l.productoNombre} × {l.unidades}</span>
+                  <span>{l.productoNombre} × {l.unidades}{l.enStock && <b style={{ marginLeft: 6, background: "#fff176", padding: "1px 6px", borderRadius: 4, fontSize: 11 }}>EN STOCK</b>}</span>
                   <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     {fmtMoney(l.total)}
                     <button type="button" onClick={() => quitarDelCarrito(l.id)} style={{ background: "none", border: "none", cursor: "pointer", color: TOKENS.danger, padding: 0 }}>
@@ -1098,6 +1149,10 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
             ) : (
               <ProductPicker products={products} categoria={categoria} value={productoId} onChange={setProductoId} placeholder="Escribí para buscar un producto..." />
             )}
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, cursor: "pointer" }}>
+              <input type="checkbox" checked={loTengoEnStock} onChange={(e) => setLoTengoEnStock(e.target.checked)} />
+              LO TENGO EN STOCK
+            </label>
           </div>
           <div className="ec-row2">
             <div className="ec-field"><label>Unidades</label><input type="number" min="1" value={unidades} onChange={(e) => setUnidades(e.target.value)} placeholder="0" /></div>
@@ -1167,7 +1222,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                           return (
                             <div key={i} style={{ marginBottom: 10 }}>
                               <div className="ec-pedido-top">
-                                <div><div className="ec-pedido-cliente">{g.cliente}</div><div className="ec-pedido-meta">Día {g.dia} · {g.categoria}</div></div>
+                                <div><div className="ec-pedido-cliente">{g.cliente}{botonRenombrar(g)}</div><div className="ec-pedido-meta">Día {g.dia} · {g.categoria}</div></div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                   <button type="button" onClick={() => descargarPdf(g)} disabled={descargando === g.cliente + "-" + g.dia} className="ec-btn ec-btn-ghost" style={{ padding: "5px 8px" }} aria-label="Descargar comprobante">
                                     {descargando === g.cliente + "-" + g.dia ? <Loader2 size={13} style={{ animation: "spin 0.9s linear infinite" }} /> : <FileDown size={13} />}
@@ -1175,6 +1230,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                                   <span className={`ec-badge ${claseBadgeEstado(estadoAgregado(g.lineas))}`}>{etiquetaEstado(estadoAgregado(g.lineas))}</span>
                                 </div>
                               </div>
+                              {editorRenombre(g)}
                               {g.lineas.map((l) => renderLinea(l))}
                               ))}
                               <div className="ec-subtotal"><span>Subtotal</span><span>{fmtMoney(subtotal)}</span></div>
@@ -1244,7 +1300,16 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
   );
 }
 
-function ObjetivoTab({ vendor, pedidos, loadError, mesRealNombre, mesRealClave }) {
+function ObjetivoTab(props) {
+  return (
+    <>
+      <ObjetivoContenido {...props} />
+      <TerminosCard vendor={props.vendor} />
+    </>
+  );
+}
+
+function ObjetivoContenido({ vendor, pedidos, loadError, mesRealNombre, mesRealClave }) {
   const [objetivoInfo, setObjetivoInfo] = useState(null);
   const [error, setError] = useState("");
   const [mesSel, setMesSel] = useState(mesRealClave);
@@ -1400,6 +1465,208 @@ function ObjetivoTab({ vendor, pedidos, loadError, mesRealNombre, mesRealClave }
       <div className="ec-summary-item" style={{ marginTop: 10 }}>
         <div className="label">TU COMISIÓN TOTAL DE {nombreSolapaSel.toUpperCase()}</div>
         <div className="value">{fmtMoney(comisionTotal)}</div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- TÉRMINOS Y CONDICIONES (firma en pantalla) ----------
+
+// Recuadro para firmar con el dedo o el mouse. Avisa con onChange(dataUrl | null).
+function FirmaPad({ onChange }) {
+  const canvasRef = React.useRef(null);
+  const dibujando = React.useRef(false);
+  const hayTrazo = React.useRef(false);
+
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const ratio = window.devicePixelRatio || 1;
+    const w = c.clientWidth, h = c.clientHeight;
+    c.width = w * ratio; c.height = h * ratio;
+    const ctx = c.getContext("2d");
+    ctx.scale(ratio, ratio);
+    ctx.lineWidth = 2.2; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#14253A";
+  }, []);
+
+  const punto = (e) => {
+    const r = canvasRef.current.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+  const empezar = (e) => {
+    e.preventDefault();
+    canvasRef.current.setPointerCapture(e.pointerId);
+    dibujando.current = true;
+    const ctx = canvasRef.current.getContext("2d");
+    const p = punto(e);
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + 0.01, p.y + 0.01); ctx.stroke();
+  };
+  const mover = (e) => {
+    if (!dibujando.current) return;
+    e.preventDefault();
+    const ctx = canvasRef.current.getContext("2d");
+    const p = punto(e);
+    ctx.lineTo(p.x, p.y); ctx.stroke();
+    hayTrazo.current = true;
+  };
+  const terminar = () => {
+    if (!dibujando.current) return;
+    dibujando.current = false;
+    if (hayTrazo.current) onChange(canvasRef.current.toDataURL("image/png"));
+  };
+  const borrar = () => {
+    const c = canvasRef.current;
+    c.getContext("2d").clearRect(0, 0, c.width, c.height);
+    hayTrazo.current = false;
+    onChange(null);
+  };
+
+  return (
+    <div>
+      <canvas
+        ref={canvasRef}
+        onPointerDown={empezar} onPointerMove={mover} onPointerUp={terminar} onPointerCancel={terminar} onPointerLeave={terminar}
+        style={{ width: "100%", height: 160, border: `1.5px dashed ${TOKENS.textSoft}`, borderRadius: 8, background: "#fff", touchAction: "none", display: "block" }}
+      />
+      <button type="button" className="ec-btn ec-btn-ghost" onClick={borrar} style={{ marginTop: 6 }}>Borrar firma</button>
+    </div>
+  );
+}
+
+function TerminosTexto() {
+  return (
+    <div style={{ maxHeight: 260, overflowY: "auto", border: `1px solid ${TOKENS.border}`, borderRadius: 8, padding: 12, background: TOKENS.cream, fontSize: 13, lineHeight: 1.5, marginBottom: 12 }}>
+      {TERMINOS_CLAUSULAS.map(([tit, txt]) => (
+        <div key={tit} style={{ marginBottom: 10 }}><b>{tit}</b><div>{txt}</div></div>
+      ))}
+    </div>
+  );
+}
+
+function TerminosCard({ vendor }) {
+  const [firmado, setFirmado] = useState(undefined); // undefined = cargando, null = nunca firmó
+  const [abierto, setAbierto] = useState(false);
+  const [nombre, setNombre] = useState(vendor.nombre || "");
+  const [dni, setDni] = useState("");
+  const [acepto, setAcepto] = useState(false);
+  const [firma, setFirma] = useState(null);
+  const [error, setError] = useState("");
+  const [guardando, setGuardando] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    db.fetchTerminosVendedor(vendor.id).then((r) => { if (vivo) setFirmado(r); }).catch(() => { if (vivo) setFirmado(null); });
+    return () => { vivo = false; };
+  }, [vendor.id]);
+
+  const vigente = firmado && firmado.version === TERMINOS_VERSION;
+
+  const descargar = (f) => descargarTerminosFirmados({
+    titulo: TERMINOS_TITULO, clausulas: TERMINOS_CLAUSULAS, version: f.version,
+    nombre: f.nombre, dni: f.dni, firma: f.firma, aceptadoEn: f.aceptadoEn,
+  }).catch((e) => alert("No se pudo generar el PDF: " + e.message));
+
+  const firmar = async () => {
+    setError("");
+    const dniLimpio = dni.replace(/\D/g, "");
+    if (!nombre.trim()) { setError("Completá tu nombre y apellido."); return; }
+    if (dniLimpio.length < 7 || dniLimpio.length > 9) { setError("Ingresá un DNI válido (solo números)."); return; }
+    if (!acepto) { setError("Tenés que tildar que leíste y aceptás los términos."); return; }
+    if (!firma) { setError("Firmá en el recuadro con el dedo."); return; }
+    setGuardando(true);
+    try {
+      const f = await db.guardarTerminos({ vendorId: vendor.id, version: TERMINOS_VERSION, nombre: nombre.trim(), dni: dniLimpio, firma });
+      setFirmado(f);
+      setAbierto(false);
+      descargar(f);
+    } catch (e) { setError("No se pudo guardar la firma: " + e.message); }
+    setGuardando(false);
+  };
+
+  return (
+    <div className="ec-card">
+      <h3><ShieldCheck size={16} /> Términos y condiciones</h3>
+      {firmado === undefined ? (
+        <Spinner label="Cargando..." />
+      ) : !abierto ? (
+        <>
+          {vigente ? (
+            <div className="ec-sub" style={{ marginBottom: 10, color: TOKENS.olive, fontWeight: 600 }}>
+              ✓ Firmados el {new Date(firmado.aceptadoEn).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })}
+            </div>
+          ) : (
+            <div className="ec-sub" style={{ marginBottom: 10 }}>
+              {firmado ? "Hay una nueva versión de los términos para firmar." : "Todavía no firmaste los términos y condiciones."}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {!vigente && <button className="ec-btn ec-btn-primary" type="button" onClick={() => setAbierto(true)}>Leer y firmar</button>}
+            {vigente && <button className="ec-btn ec-btn-ghost" type="button" onClick={() => descargar(firmado)}><FileDown size={14} /> Descargar mi copia (PDF)</button>}
+            {vigente && <button className="ec-btn ec-btn-ghost" type="button" onClick={() => setAbierto(true)}>Ver términos</button>}
+          </div>
+        </>
+      ) : (
+        <>
+          <TerminosTexto />
+          {!vigente && (
+            <>
+              <div className="ec-field"><label>Nombre y apellido</label><input value={nombre} onChange={(e) => setNombre(e.target.value)} /></div>
+              <div className="ec-field"><label>DNI</label><input inputMode="numeric" value={dni} onChange={(e) => setDni(e.target.value)} placeholder="Solo números" /></div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, margin: "4px 0 12px", cursor: "pointer" }}>
+                <input type="checkbox" checked={acepto} onChange={(e) => setAcepto(e.target.checked)} />
+                Leí y acepto los términos y condiciones
+              </label>
+              <div className="ec-sub" style={{ marginBottom: 6 }}>Firmá acá con el dedo:</div>
+              <FirmaPad onChange={setFirma} />
+              {error && <div className="ec-error" style={{ marginTop: 10 }}>{error}</div>}
+            </>
+          )}
+          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+            {!vigente && (
+              <button className="ec-btn ec-btn-primary" type="button" disabled={guardando} onClick={firmar}>
+                {guardando ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check size={15} />} Firmar y guardar
+              </button>
+            )}
+            <button className="ec-btn ec-btn-ghost" type="button" onClick={() => setAbierto(false)}>Cerrar</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function TerminosAdmin({ vendors }) {
+  const [firmas, setFirmas] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => { db.fetchTerminosTodos().then(setFirmas).catch((e) => setError(e.message)); }, []);
+  if (error) return <div className="ec-card"><div className="ec-error">{error}</div></div>;
+  if (!firmas) return <div className="ec-card"><Spinner label="Cargando firmas..." /></div>;
+  const ultima = {};
+  firmas.forEach((f) => { if (!ultima[f.vendorId]) ultima[f.vendorId] = f; });
+  const filas = vendors.map((v) => ({ v, f: ultima[v.id] || null }));
+  const pendientes = filas.filter((x) => !x.f || x.f.version !== TERMINOS_VERSION).length;
+  return (
+    <div className="ec-card">
+      <h3><ShieldCheck size={16} /> Términos y condiciones (versión {TERMINOS_VERSION})</h3>
+      <div className="ec-sub" style={{ marginBottom: 12 }}>{pendientes} de {vendors.length} vendedores sin firmar la versión vigente.</div>
+      <div style={{ overflowX: "auto" }}>
+        <table className="ec-table">
+          <thead><tr><th>Vendedor</th><th>Estado</th><th>DNI</th><th>Fecha</th><th></th></tr></thead>
+          <tbody>
+            {filas.map(({ v, f }) => {
+              const ok = f && f.version === TERMINOS_VERSION;
+              return (
+                <tr key={v.id}>
+                  <td>{v.nombre}</td>
+                  <td>{ok ? "✓ Firmado" : f ? "Versión vieja" : "Pendiente"}</td>
+                  <td>{f ? f.dni : "–"}</td>
+                  <td>{f ? new Date(f.aceptadoEn).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }) : "–"}</td>
+                  <td>{f && <button className="ec-btn ec-btn-ghost" type="button" onClick={() => descargarTerminosFirmados({ titulo: TERMINOS_TITULO, clausulas: TERMINOS_CLAUSULAS, version: f.version, nombre: f.nombre, dni: f.dni, firma: f.firma, aceptadoEn: f.aceptadoEn })}><FileDown size={13} /> PDF</button>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -1612,12 +1879,14 @@ function AdminApp({ vendors, products, onLogout, refreshVendors, refreshProducts
         <button className={`ec-admin-tab ${tab === "productos" ? "active" : ""}`} onClick={() => setTab("productos")}><Boxes size={14} /> Productos</button>
         <button className={`ec-admin-tab ${tab === "objetivos" ? "active" : ""}`} onClick={() => setTab("objetivos")}><Target size={14} /> Objetivos</button>
         <button className={`ec-admin-tab ${tab === "pedidos" ? "active" : ""}`} onClick={() => setTab("pedidos")}><ListChecks size={14} /> Pedidos</button>
+        <button className={`ec-admin-tab ${tab === "terminos" ? "active" : ""}`} onClick={() => setTab("terminos")}><ShieldCheck size={14} /> Términos</button>
       </div>
       <div className="ec-content" style={{ paddingBottom: 40 }}>
         {tab === "vendedores" && <VendedoresAdmin vendors={vendors} refreshVendors={refreshVendors} />}
         {tab === "productos" && <ProductosAdmin products={products} refreshProducts={refreshProducts} />}
         {tab === "objetivos" && <ObjetivosAdmin vendors={vendors} />}
         {tab === "pedidos" && <PedidosAdmin vendors={vendors} />}
+        {tab === "terminos" && <TerminosAdmin vendors={vendors} />}
       </div>
     </div>
   );
