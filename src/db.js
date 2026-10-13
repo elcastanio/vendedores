@@ -231,3 +231,30 @@ export async function marcarTodasLeidas(vendorId) {
   const { error } = await supabase.from("notificaciones").update({ leida: true }).eq("vendor_id", vendorId).eq("leida", false);
   if (error) throw error;
 }
+
+// ---------- TÉRMINOS Y CONDICIONES (firma en pantalla) ----------
+
+function mapTerminos(r) {
+  return { id: r.id, vendorId: r.vendor_id, version: r.version, nombre: r.nombre, dni: r.dni, firma: r.firma, aceptadoEn: r.aceptado_en };
+}
+
+// Última firma de un vendedor (o null si nunca firmó).
+export async function fetchTerminosVendedor(vendorId) {
+  const { data, error } = await supabase.from("terminos_aceptados").select("*").eq("vendor_id", vendorId).order("aceptado_en", { ascending: false }).limit(1);
+  if (error) throw error;
+  return data && data.length > 0 ? mapTerminos(data[0]) : null;
+}
+
+export async function guardarTerminos({ vendorId, version, nombre, dni, firma }) {
+  const row = { id: `${vendorId}-${Date.now()}`, vendor_id: vendorId, version, nombre, dni, firma };
+  const { error } = await supabase.from("terminos_aceptados").insert(row);
+  if (error) throw error;
+  return mapTerminos({ ...row, aceptado_en: new Date().toISOString() });
+}
+
+// Para el admin: todas las firmas (la más nueva de cada vendedor queda primera).
+export async function fetchTerminosTodos() {
+  const { data, error } = await supabase.from("terminos_aceptados").select("*").order("aceptado_en", { ascending: false });
+  if (error) throw error;
+  return (data || []).map(mapTerminos);
+}
