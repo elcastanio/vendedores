@@ -1006,8 +1006,8 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
   const puedeRenombrar = (g) => lineasDelPedido(g).every(lineaEditable);
   const botonRenombrar = (g) => (puedeRenombrar(g) ? (
     <button type="button" aria-label="Corregir nombre del cliente" onClick={() => setRenombrando({ clave: claveOrden(g), valor: g.cliente, guardando: false, error: "" })}
-      style={{ background: "none", border: "none", cursor: "pointer", color: TOKENS.textSoft, padding: "0 0 0 8px", verticalAlign: "middle" }}>
-      <Pencil size={12} />
+      style={{ background: TOKENS.cream, border: `1px solid ${TOKENS.border}`, borderRadius: 6, cursor: "pointer", color: TOKENS.olive, padding: "2px 7px", marginLeft: 8, verticalAlign: "middle", fontSize: 11, fontWeight: 600, fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 4 }}>
+      <Pencil size={11} /> Editar nombre
     </button>
   ) : null);
   const guardarRenombre = async (g) => {
@@ -1149,9 +1149,9 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
             ) : (
               <ProductPicker products={products} categoria={categoria} value={productoId} onChange={setProductoId} placeholder="Escribí para buscar un producto..." />
             )}
-            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, cursor: "pointer" }}>
-              <input type="checkbox" checked={loTengoEnStock} onChange={(e) => setLoTengoEnStock(e.target.checked)} />
-              LO TENGO EN STOCK
+            <label style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 500, cursor: "pointer", width: "auto" }}>
+              <span>Lo tengo en stock</span>
+              <input type="checkbox" checked={loTengoEnStock} onChange={(e) => setLoTengoEnStock(e.target.checked)} style={{ width: 18, height: 18, padding: 0, margin: 0, flex: "none" }} />
             </label>
           </div>
           <div className="ec-row2">
@@ -1232,7 +1232,6 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
                               </div>
                               {editorRenombre(g)}
                               {g.lineas.map((l) => renderLinea(l))}
-                              ))}
                               <div className="ec-subtotal"><span>Subtotal</span><span>{fmtMoney(subtotal)}</span></div>
                             </div>
                           );
