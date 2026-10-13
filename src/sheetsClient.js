@@ -37,10 +37,10 @@ async function llamar(action, params) {
   return data;
 }
 
-export async function addPedidoSheet(sheetUrl, { fecha, categoria, cliente, producto, unidades, precio }) {
+export async function addPedidoSheet(sheetUrl, { fecha, categoria, cliente, producto, unidades, precio, enStock }) {
   const sheetId = extraerSheetId(sheetUrl);
   const mes = mesDeFecha(fecha);
-  return llamar("addPedido", { sheetId, mes, fecha, categoria, cliente, producto, unidades, precio });
+  return llamar("addPedido", { sheetId, mes, fecha, categoria, cliente, producto, unidades, precio, enStock: !!enStock });
 }
 
 export async function fetchPedidosSheet(sheetUrl, mes) {
@@ -117,6 +117,10 @@ export async function editarPedidoSheet(sheetUrl, mes, fila, { categoria, client
   return llamar("editarPedido", { sheetId, mes, fila, categoria, cliente, producto, unidades, clienteAnterior, productoAnterior });
 }
 
+export async function renombrarClienteSheet(sheetUrl, mes, { lineas, clienteAnterior, clienteNuevo }) {
+  const sheetId = extraerSheetId(sheetUrl);
+  return llamar("renombrarCliente", { sheetId, mes, lineas, clienteAnterior, clienteNuevo });
+}
 export async function anularPedidoSheet(sheetUrl, mes, fila, { cliente, producto } = {}) {
   const sheetId = extraerSheetId(sheetUrl);
   return llamar("anularPedido", { sheetId, mes, fila, cliente, producto });
