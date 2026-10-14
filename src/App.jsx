@@ -1429,6 +1429,10 @@ function ObjetivoContenido({ vendor, pedidos, loadError, mesRealNombre, mesRealC
   const mayoristaGranel = (porCategoria.Mayorista || 0) + (porCategoria.Granel || 0);
   const totalVentas = minoristaComercio + mayoristaGranel;
   const baseComision = vendor.comision || 0;
+  // Comisión base: Minorista al % del vendedor y Comercio al 10% fijo.
+  const comisionBase = (porCategoria.Minorista || 0) * baseComision + (porCategoria.Comercio || 0) * 0.10;
+  // Tasa base promedio según la mezcla de Minorista/Comercio vendida (para las proyecciones).
+  const tasaBaseEfectiva = minoristaComercio > 0 ? comisionBase / minoristaComercio : baseComision;
 
   const comisionMayorista = mayoristaGranel * (mayoristaGranel <= 5000000 ? 0.05 : 0.06);
 
@@ -1436,21 +1440,21 @@ function ObjetivoContenido({ vendor, pedidos, loadError, mesRealNombre, mesRealC
   let escalon;
   if (objetivo > 0) {
     if (minoristaComercio < objetivo * 0.8) {
-      comisionMinorista = minoristaComercio * baseComision;
+      comisionMinorista = comisionBase;
       escalon = "base";
     } else if (minoristaComercio < objetivo) {
-      comisionMinorista = minoristaComercio * baseComision + minoristaComercio * 0.035;
+      comisionMinorista = comisionBase + minoristaComercio * 0.035;
       escalon = "80%";
     } else if (minoristaComercio === objetivo) {
-      comisionMinorista = minoristaComercio * baseComision + minoristaComercio * 0.05;
+      comisionMinorista = comisionBase + minoristaComercio * 0.05;
       escalon = "objetivo";
     } else {
       const exceso = minoristaComercio - objetivo;
-      comisionMinorista = minoristaComercio * baseComision + minoristaComercio * 0.05 + (0.05 * exceso * exceso) / objetivo;
+      comisionMinorista = comisionBase + minoristaComercio * 0.05 + (0.05 * exceso * exceso) / objetivo;
       escalon = "superado";
     }
   } else {
-    comisionMinorista = minoristaComercio * baseComision;
+    comisionMinorista = comisionBase;
     escalon = "sin objetivo";
   }
   const bonoEquipo = objetivoInfo.equipoBonus || 0;
@@ -1465,12 +1469,12 @@ function ObjetivoContenido({ vendor, pedidos, loadError, mesRealNombre, mesRealC
     if (escalon === "base") {
       const proximoUmbral = objetivo * 0.8;
       const falta = proximoUmbral - minoristaComercio;
-      const comisionProyectada = proximoUmbral * baseComision + proximoUmbral * 0.035;
+      const comisionProyectada = proximoUmbral * tasaBaseEfectiva + proximoUmbral * 0.035;
       const ganancia = comisionProyectada - comisionMinorista;
       mensajeMotivador = `¡Vamos ${primerNombre}! Te faltan ${fmtMoney(falta)} en ventas para llegar al 80% del objetivo — ahí tu comisión sube a ${fmtMoney(comisionProyectada)} (+${fmtMoney(ganancia)}).`;
     } else if (escalon === "80%") {
       const falta = objetivo - minoristaComercio;
-      const comisionProyectada = objetivo * baseComision + objetivo * 0.05;
+      const comisionProyectada = objetivo * tasaBaseEfectiva + objetivo * 0.05;
       const ganancia = comisionProyectada - comisionMinorista;
       mensajeMotivador = `¡Ya casi ${primerNombre}! Te faltan ${fmtMoney(falta)} para cumplir el objetivo — tu comisión pasaría a ${fmtMoney(comisionProyectada)} (+${fmtMoney(ganancia)}).`;
     } else if (escalon === "objetivo") {
