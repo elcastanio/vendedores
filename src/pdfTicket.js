@@ -238,6 +238,7 @@ export async function descargarComprobantePedido(datos) {
 // Mayorista + Granel al 5% fijo. El premio por objetivo y el bono se liquidan a fin de mes.
 // ---------------------------------------------------------------------------
 export const PCT_MAYORISTA_GRANEL = 0.05;
+export const PCT_COMERCIO = 0.10;
 
 function pctTexto(x) {
   return `${String(Math.round(Number(x || 0) * 1000) / 10).replace(".", ",")}%`;
@@ -251,7 +252,7 @@ function fechaCorta(iso) {
 export function calcularRendicionDespacho(porCategoria, pctMinorista) {
   const minoristaComercio = (porCategoria.Minorista || 0) + (porCategoria.Comercio || 0);
   const mayoristaGranel = (porCategoria.Mayorista || 0) + (porCategoria.Granel || 0);
-  const comisionMinorista = minoristaComercio * (Number(pctMinorista) || 0);
+  const comisionMinorista = (porCategoria.Minorista || 0) * (Number(pctMinorista) || 0) + (porCategoria.Comercio || 0) * PCT_COMERCIO;
   const comisionMayorista = mayoristaGranel * PCT_MAYORISTA_GRANEL;
   const vendido = minoristaComercio + mayoristaGranel;
   const c2 = (x) => Math.round(x * 100) / 100;
@@ -430,7 +431,7 @@ export async function armarResumenDespacho({ vendorNombre, fecha, mesNombre, caj
   fila("Vendiste · Mayorista y Granel", fmtC(r.mayoristaGranel));
   fila("Total vendido", fmtC(r.vendido), true);
   y += 2; linea(); y += 18;
-  fila(`Tu comisión · Minorista y Comercio (${pctTexto(pctMinorista)})`, fmtC(r.comisionMinorista));
+  fila(`Tu comisión · Minorista (${pctTexto(pctMinorista)}) y Comercio (${pctTexto(PCT_COMERCIO)})`, fmtC(r.comisionMinorista));
   fila(`Tu comisión · Mayorista y Granel (${pctTexto(PCT_MAYORISTA_GRANEL)})`, fmtC(r.comisionMayorista));
   fila("Tu comisión total", fmtC(r.comision), true);
   y += 4;
