@@ -13,6 +13,34 @@
   </head>
   <body style="margin:0;">
     <div id="root"></div>
+    <script>
+      // Auto-reparación: si la app no llega a mostrar nada en 8 segundos (por ejemplo por una
+      // versión vieja guardada en el celular), borra el caché y la recarga una vez sola.
+      // Si igual no abre, muestra un botón para repararla a mano.
+      (function () {
+        function reparar() {
+          var tareas = [];
+          if (navigator.serviceWorker) tareas.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+          if (window.caches) tareas.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
+          Promise.all(tareas).catch(function () {}).then(function () { location.reload(); });
+        }
+        window.__repararApp = reparar;
+        setTimeout(function () {
+          var root = document.getElementById("root");
+          if (!root || root.children.length > 0) return;
+          var yaIntento = false;
+          try { yaIntento = sessionStorage.getItem("ec_reparo") === "1"; } catch (e) {}
+          if (!yaIntento) {
+            try { sessionStorage.setItem("ec_reparo", "1"); } catch (e) {}
+            reparar();
+            return;
+          }
+          root.innerHTML = '<div style="font-family:sans-serif;padding:32px 20px;text-align:center;color:#14253A">' +
+            '<p style="font-size:16px;margin:0 0 16px">La app no pudo abrir.</p>' +
+            '<button onclick="__repararApp()" style="background:#003C69;color:#fff;border:none;border-radius:8px;padding:12px 20px;font-size:15px;font-weight:600">Reparar la app</button></div>';
+        }, 8000);
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
