@@ -258,3 +258,49 @@ export async function fetchTerminosTodos() {
   if (error) throw error;
   return (data || []).map(mapTerminos);
 }
+
+// ---------- CATÁLOGOS (PDFs que los vendedores descargan y comparten) ----------
+
+const BUCKET_CATALOGOS = "catalogos";
+
+export async function fetchCatalogos() {
+  const { data, error } = await supabase.from("catalogos").select("*").order("orden").order("creado_en");
+  if (error) throw error;
+  return (data || []).map((c) => ({ id: c.id, nombre: c.nombre, path: c.path, url: c.url, orden: c.orden || 0 }));
+}
+
+function nombreSeguroArchivo(nombre) {
+  return String(nombre).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "catalogo";
+}
+
+async function subirPdf(nombre, archivo) {
+  const path = `${Date.now()}-${nombreSeguroArchivo(nombre)}.pdf`;
+  const { error } = await supabase.storage.from(BUCKET_CATALOGOS).upload(path, archivo, { contentType: "application/pdf", upsert: false });
+  if (error) throw error;
+  const { data } = supabase.storage.from(BUCKET_CATALOGOS).getPublicUrl(path);
+  return { path, url: data.publicUrl };
+}
+
+export async function addCatalogo(nombre, archivo, orden) {
+  const { path, url } = await subirPdf(nombre, archivo);
+  const { error } = await supabase.from("catalogos").insert({ id: `cat-${Date.now()}`, nombre, path, url, orden: orden || 0 });
+  if (error) { await supabase.storage.from(BUCKET_CATALOGOS).remove([path]); throw error; }
+}
+
+export async function reemplazarCatalogo(catalogo, archivo) {
+  const { path, url } = await subirPdf(catalogo.nombre, archivo);
+  const { error } = await supabase.from("catalogos").update({ path, url }).eq("id", catalogo.id);
+  if (error) { await supabase.storage.from(BUCKET_CATALOGOS).remove([path]); throw error; }
+  await supabase.storage.from(BUCKET_CATALOGOS).remove([catalogo.path]);
+}
+
+export async function renombrarCatalogo(id, nombre) {
+  const { error } = await supabase.from("catalogos").update({ nombre }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function eliminarCatalogo(catalogo) {
+  const { error } = await supabase.from("catalogos").delete().eq("id", catalogo.id);
+  if (error) throw error;
+  await supabase.storage.from(BUCKET_CATALOGOS).remove([catalogo.path]);
+}
