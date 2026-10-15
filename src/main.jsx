@@ -7,3 +7,6 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     <App />
   </React.StrictMode>
 );
+
+// La app abrió bien: se libera la marca de la auto-reparación (ver index.html).
+setTimeout(() => { try { sessionStorage.removeItem("ec_reparo"); } catch (e) {} }, 3000);
