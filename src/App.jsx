@@ -1876,9 +1876,13 @@ function StockTab({ vendor, products, stock, loadError, onChanged }) {
                 </div>
                 {s.observacion && <div className="ec-note">{s.observacion}</div>}
                 {activo && (
-                  <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                    <button className="ec-btn ec-btn-ghost" style={{ padding: "6px 10px" }} onClick={() => marcarEstado(s, "Vendido")}>Marcar como vendido</button>
-                    <button className="ec-btn ec-btn-ghost" style={{ padding: "6px 10px" }} onClick={() => marcarEstado(s, "Devuelto")}>Marcar como devuelto</button>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "nowrap" }}>
+                    <button type="button" className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "5px 8px", fontSize: 13, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, whiteSpace: "nowrap" }} onClick={() => marcarEstado(s, "Vendido")}>
+                      Vendido <Check size={15} color="#2E9E4F" strokeWidth={3} />
+                    </button>
+                    <button type="button" className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "5px 8px", fontSize: 13, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, whiteSpace: "nowrap" }} onClick={() => marcarEstado(s, "Devuelto")}>
+                      Devuelto <Check size={15} color="#D32F2F" strokeWidth={3} />
+                    </button>
                   </div>
                 )}
               </div>
