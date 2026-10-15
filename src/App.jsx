@@ -376,7 +376,7 @@ function VendorApp({ vendor, products, onLogout }) {
           <button className="ec-btn ec-btn-ghost" onClick={() => setTab("catalogos")} aria-label="Catálogos" title="Catálogos" style={tab === "catalogos" ? { background: TOKENS.cream } : undefined}>
             <BookOpen size={14} />
           </button>
-          <button className="ec-btn ec-btn-ghost" onClick={onLogout}><LogOut size={14} /> Salir</button>
+          <button className="ec-btn ec-btn-ghost" onClick={onLogout} aria-label="Salir" title="Salir"><LogOut size={15} strokeWidth={3} /></button>
         </div>
       </div>
       <div className="ec-content">
