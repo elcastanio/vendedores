@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import {
   ClipboardList, Target, Package, Wallet, LogOut, Plus, Check, X, Loader2,
   ShieldCheck, Users, Boxes, ListChecks, ChevronRight, AlertTriangle, Upload,
-  ExternalLink, RefreshCw, Bell, BellOff, Pencil, FileDown, Trash2, Search,
+  ExternalLink, RefreshCw, Bell, BellOff, Pencil, FileDown, Trash2, Search, BookOpen,
 } from "lucide-react";
 import * as db from "./db";
 import * as sheets from "./sheetsClient";
@@ -185,6 +185,7 @@ class ErrorBoundary extends React.Component {
           <div className="ec-shell"><div className="ec-content"><div className="ec-card">
             <h3 style={{ color: TOKENS.danger }}><AlertTriangle size={16} /> Se produjo un error</h3>
             <div style={{ fontSize: 13, color: TOKENS.textSoft, wordBreak: "break-word" }}>{this.state.error.message || String(this.state.error)}</div>
+            <button type="button" className="ec-btn ec-btn-primary" style={{ marginTop: 12 }} onClick={() => (window.__repararApp ? window.__repararApp() : window.location.reload())}>Reparar la app</button>
           </div></div></div>
         </>
       );
@@ -372,6 +373,9 @@ function VendorApp({ vendor, products, onLogout }) {
               <span style={{ position: "absolute", top: -7, right: -7, background: TOKENS.rust, color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, minWidth: 17, height: 17, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>{noLeidos}</span>
             )}
           </button>
+          <button className="ec-btn ec-btn-ghost" onClick={() => setTab("catalogos")} aria-label="Catálogos" title="Catálogos" style={tab === "catalogos" ? { background: TOKENS.cream } : undefined}>
+            <BookOpen size={14} />
+          </button>
           <button className="ec-btn ec-btn-ghost" onClick={onLogout}><LogOut size={14} /> Salir</button>
         </div>
       </div>
@@ -393,6 +397,7 @@ function VendorApp({ vendor, products, onLogout }) {
           </div></div>
         )}
         {tab === "avisos" && <AvisosTab avisos={avisos} abierto={avisoAbierto} setAbierto={setAvisoAbierto} onLeerTodos={leerTodos} onIrAPedidos={() => setTab("pedidos")} onEliminar={eliminarAviso} datosPorMes={datosAvisos} cargando={cargandoAvisos} vendor={vendor} />}
+        {tab === "catalogos" && <CatalogosTab />}
         {tab === "pedidos" && <PedidosTab vendor={vendor} products={products} pedidos={pedidosMes} loadError={pedidosError} onChanged={cargarPedidosMes} mesReal={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "objetivo" && <ObjetivoTab vendor={vendor} pedidos={pedidosMes} loadError={pedidosError} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "equipo" && <EquipoTab vendor={vendor} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
@@ -1980,6 +1985,7 @@ function AdminApp({ vendors, products, onLogout, refreshVendors, refreshProducts
         <button className={`ec-admin-tab ${tab === "productos" ? "active" : ""}`} onClick={() => setTab("productos")}><Boxes size={14} /> Productos</button>
         <button className={`ec-admin-tab ${tab === "objetivos" ? "active" : ""}`} onClick={() => setTab("objetivos")}><Target size={14} /> Objetivos</button>
         <button className={`ec-admin-tab ${tab === "pedidos" ? "active" : ""}`} onClick={() => setTab("pedidos")}><ListChecks size={14} /> Pedidos</button>
+        <button className={`ec-admin-tab ${tab === "catalogos" ? "active" : ""}`} onClick={() => setTab("catalogos")}><BookOpen size={14} /> Catálogos</button>
         <button className={`ec-admin-tab ${tab === "terminos" ? "active" : ""}`} onClick={() => setTab("terminos")}><ShieldCheck size={14} /> Términos</button>
       </div>
       <div className="ec-content" style={{ paddingBottom: 40 }}>
@@ -1987,6 +1993,7 @@ function AdminApp({ vendors, products, onLogout, refreshVendors, refreshProducts
         {tab === "productos" && <ProductosAdmin products={products} refreshProducts={refreshProducts} />}
         {tab === "objetivos" && <ObjetivosAdmin vendors={vendors} />}
         {tab === "pedidos" && <PedidosAdmin vendors={vendors} />}
+        {tab === "catalogos" && <CatalogosAdmin />}
         {tab === "terminos" && <TerminosAdmin vendors={vendors} />}
       </div>
     </div>
@@ -2138,6 +2145,157 @@ function parseCatalogWorkbook(wb) {
     });
   }
   return { solapa: nombreSolapa, filas: resultado };
+}
+
+// ---------- CATÁLOGOS ----------
+
+function CatalogosTab() {
+  const [lista, setLista] = useState(null);
+  const [error, setError] = useState("");
+  const [compartiendo, setCompartiendo] = useState(null);
+
+  useEffect(() => { db.fetchCatalogos().then(setLista).catch((e) => setError(e.message)); }, []);
+
+  const compartir = async (c) => {
+    setCompartiendo(c.id);
+    try {
+      const resp = await fetch(c.url);
+      const blob = await resp.blob();
+      const archivo = new File([blob], `${c.nombre}.pdf`, { type: "application/pdf" });
+      if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+        await navigator.share({ files: [archivo] });
+      } else {
+        window.open(c.url, "_blank");
+      }
+    } catch (e) {
+      if (!(e && e.name === "AbortError")) alert("No se pudo compartir: " + e.message);
+    }
+    setCompartiendo(null);
+  };
+
+  return (
+    <div className="ec-card">
+      <h3><BookOpen size={16} /> Catálogos</h3>
+      <div className="ec-sub" style={{ marginBottom: 12 }}>Descargalos o compartilos directo con tus clientes.</div>
+      {error && <div className="ec-error">{error}</div>}
+      {lista === null && !error ? <Spinner label="Cargando..." /> : lista && lista.length === 0 ? (
+        <div className="ec-empty">Todavía no hay catálogos cargados.</div>
+      ) : (lista || []).map((c) => (
+        <div className="ec-pedido-row" key={c.id}>
+          <div className="ec-pedido-cliente" style={{ marginBottom: 8 }}>{c.nombre}</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <a className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "6px 10px", justifyContent: "center", textDecoration: "none" }} href={c.url} download={`${c.nombre}.pdf`} target="_blank" rel="noopener noreferrer"><FileDown size={14} /> Descargar</a>
+            <button type="button" className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "6px 10px", justifyContent: "center" }} disabled={compartiendo === c.id} onClick={() => compartir(c)}>
+              {compartiendo === c.id ? <Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> : <ExternalLink size={14} />} Compartir
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CatalogosAdmin() {
+  const [lista, setLista] = useState(null);
+  const [error, setError] = useState("");
+  const [nombre, setNombre] = useState("");
+  const [archivo, setArchivo] = useState(null);
+  const [claveInput, setClaveInput] = useState(0);
+  const [ocupado, setOcupado] = useState(null); // "nuevo" o id del catálogo que se está procesando
+  const [editando, setEditando] = useState(null); // { id, nombre }
+
+  const cargar = useCallback(async () => {
+    try { setLista(await db.fetchCatalogos()); } catch (e) { setError(e.message); }
+  }, []);
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const validarPdf = (f) => {
+    if (!f) return "Elegí un archivo PDF.";
+    if (f.type !== "application/pdf" && !/\.pdf$/i.test(f.name)) return "El archivo tiene que ser un PDF.";
+    if (f.size > 50 * 1024 * 1024) return "El PDF pesa más de 50 MB (el máximo permitido).";
+    return "";
+  };
+
+  const agregar = async () => {
+    setError("");
+    if (!nombre.trim()) { setError("Escribí el nombre del catálogo."); return; }
+    const err = validarPdf(archivo);
+    if (err) { setError(err); return; }
+    setOcupado("nuevo");
+    try {
+      await db.addCatalogo(nombre.trim(), archivo, (lista || []).length + 1);
+      setNombre(""); setArchivo(null); setClaveInput((k) => k + 1);
+      await cargar();
+    } catch (e) { setError("No se pudo subir: " + e.message); }
+    setOcupado(null);
+  };
+
+  const reemplazar = async (c, f) => {
+    setError("");
+    const err = validarPdf(f);
+    if (err) { setError(err); return; }
+    setOcupado(c.id);
+    try { await db.reemplazarCatalogo(c, f); await cargar(); }
+    catch (e) { setError("No se pudo reemplazar: " + e.message); }
+    setOcupado(null);
+  };
+
+  const borrar = async (c) => {
+    if (!confirm(`¿Borrar el catálogo "${c.nombre}"? Los vendedores dejan de verlo.`)) return;
+    setError(""); setOcupado(c.id);
+    try { await db.eliminarCatalogo(c); await cargar(); }
+    catch (e) { setError("No se pudo borrar: " + e.message); }
+    setOcupado(null);
+  };
+
+  const guardarNombre = async () => {
+    if (!editando || !editando.nombre.trim()) return;
+    setOcupado(editando.id);
+    try { await db.renombrarCatalogo(editando.id, editando.nombre.trim()); setEditando(null); await cargar(); }
+    catch (e) { setError("No se pudo renombrar: " + e.message); }
+    setOcupado(null);
+  };
+
+  return (
+    <>
+      <div className="ec-card">
+        <h3><BookOpen size={16} /> Agregar catálogo</h3>
+        <div className="ec-field"><label>Nombre (lo que ve el vendedor)</label><input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej: Catálogo minorista" /></div>
+        <div className="ec-field"><label>Archivo PDF (hasta 50 MB)</label><input key={claveInput} type="file" accept="application/pdf" onChange={(e) => setArchivo(e.target.files && e.target.files[0] ? e.target.files[0] : null)} /></div>
+        {error && <div className="ec-error">{error}</div>}
+        <button className="ec-btn ec-btn-primary" type="button" disabled={ocupado === "nuevo"} onClick={agregar}>
+          {ocupado === "nuevo" ? <><Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> Subiendo...</> : <><Upload size={15} /> Subir catálogo</>}
+        </button>
+      </div>
+      <div className="ec-card">
+        <h3>Catálogos cargados</h3>
+        {lista === null ? <Spinner label="Cargando..." /> : lista.length === 0 ? <div className="ec-empty">Todavía no cargaste ninguno.</div> : lista.map((c) => (
+          <div className="ec-pedido-row" key={c.id}>
+            {editando && editando.id === c.id ? (
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <input style={{ flex: 1, padding: 8, border: `1px solid ${TOKENS.border}`, borderRadius: 8, fontFamily: "inherit", fontSize: 14 }} value={editando.nombre} onChange={(e) => setEditando({ ...editando, nombre: e.target.value })} />
+                <button type="button" className="ec-btn ec-btn-primary" onClick={guardarNombre}><Check size={14} /></button>
+                <button type="button" className="ec-btn ec-btn-ghost" onClick={() => setEditando(null)}><X size={14} /></button>
+              </div>
+            ) : (
+              <div className="ec-pedido-cliente" style={{ marginBottom: 8 }}>
+                {c.nombre}
+                <button type="button" onClick={() => setEditando({ id: c.id, nombre: c.nombre })} style={{ background: "none", border: "none", cursor: "pointer", color: TOKENS.textSoft, marginLeft: 8 }} aria-label="Cambiar nombre"><Pencil size={13} /></button>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <a className="ec-btn ec-btn-ghost" style={{ padding: "6px 10px", textDecoration: "none" }} href={c.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={14} /> Ver</a>
+              <label className="ec-btn ec-btn-ghost" style={{ padding: "6px 10px", cursor: "pointer" }}>
+                {ocupado === c.id ? <Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> : <Upload size={14} />} Reemplazar PDF
+                <input type="file" accept="application/pdf" style={{ display: "none" }} disabled={ocupado !== null} onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) reemplazar(c, f); }} />
+              </label>
+              <button type="button" className="ec-btn ec-btn-ghost" style={{ padding: "6px 10px", color: TOKENS.danger }} disabled={ocupado !== null} onClick={() => borrar(c)}><Trash2 size={14} /> Borrar</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
 }
 
 function ProductosAdmin({ products, refreshProducts }) {
