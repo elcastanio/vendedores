@@ -1813,6 +1813,7 @@ function StockTab({ vendor, products, stock, loadError, onChanged }) {
   const [unidades, setUnidades] = useState("");
   const [observacion, setObservacion] = useState("");
   const [saving, setSaving] = useState(false);
+  const [procesando, setProcesando] = useState(null); // fila que se está marcando (hasta que la lista se actualiza)
   const [error, setError] = useState("");
 
   const productoSel = products.find((p) => p.id === productoId);
@@ -1832,8 +1833,10 @@ function StockTab({ vendor, products, stock, loadError, onChanged }) {
     const texto = estado === "Vendido" ? "vendido" : "devuelto a casa central";
     if (!confirm(`¿Marcar ${s.producto} × ${s.unidades} como ${texto}? Ya no figurará más en tu stock.`)) return;
     setError("");
-    try { await sheets.updateStockEstadoSheet(vendor.sheetUrl, s.fila, estado); onChanged(); }
+    setProcesando(s.fila);
+    try { await sheets.updateStockEstadoSheet(vendor.sheetUrl, s.fila, estado); await onChanged(); }
     catch (e) { setError(e.message); }
+    setProcesando(null);
   };
   const norm = (e) => String(e || "").trim().toLowerCase();
   const enStock = (s) => norm(s.estado) !== "vendido" && norm(s.estado) !== "devuelto";
@@ -1875,12 +1878,17 @@ function StockTab({ vendor, products, stock, loadError, onChanged }) {
                   <span className={`ec-badge ${norm(s.estado) === "vendido" ? "ec-badge-desp" : activo ? "ec-badge-pend" : ""}`}>{s.estado}</span>
                 </div>
                 {s.observacion && <div className="ec-note">{s.observacion}</div>}
-                {activo && (
+                {activo && procesando === s.fila && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 8, fontSize: 13, color: TOKENS.textSoft }}>
+                    <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> Actualizando...
+                  </div>
+                )}
+                {activo && procesando !== s.fila && (
                   <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "nowrap" }}>
-                    <button type="button" className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "5px 8px", fontSize: 13, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, whiteSpace: "nowrap" }} onClick={() => marcarEstado(s, "Vendido")}>
+                    <button type="button" className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "5px 8px", fontSize: 13, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, whiteSpace: "nowrap" }} disabled={procesando !== null} onClick={() => marcarEstado(s, "Vendido")}>
                       Vendido <Check size={15} color="#2E9E4F" strokeWidth={3} />
                     </button>
-                    <button type="button" className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "5px 8px", fontSize: 13, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, whiteSpace: "nowrap" }} onClick={() => marcarEstado(s, "Devuelto")}>
+                    <button type="button" className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "5px 8px", fontSize: 13, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, whiteSpace: "nowrap" }} disabled={procesando !== null} onClick={() => marcarEstado(s, "Devuelto")}>
                       Devuelto <Check size={15} color="#D32F2F" strokeWidth={3} />
                     </button>
                   </div>
