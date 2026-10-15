@@ -107,6 +107,22 @@ function GlobalStyle() {
   );
 }
 
+// Botón de recargar: el ícono gira y el botón queda deshabilitado hasta que termina de actualizar.
+function BotonRecargar({ onClick }) {
+  const [cargando, setCargando] = useState(false);
+  const tocar = async () => {
+    if (cargando) return;
+    setCargando(true);
+    try { await onClick(); } catch (e) { /* el error lo muestra cada pantalla */ }
+    setCargando(false);
+  };
+  return (
+    <button type="button" className="ec-btn ec-btn-ghost" style={{ padding: "5px 9px" }} disabled={cargando} onClick={tocar} aria-label="Actualizar">
+      <RefreshCw size={13} style={cargando ? { animation: "spin 0.9s linear infinite" } : undefined} />
+    </button>
+  );
+}
+
 function Spinner({ label }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 24, color: TOKENS.textSoft, fontSize: 13.5 }}>
@@ -1223,7 +1239,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
       <div className="ec-card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: TOKENS.textSoft }}>VER PEDIDOS DE</span>
-          <button className="ec-btn ec-btn-ghost" style={{ padding: "5px 9px" }} onClick={refrescar}><RefreshCw size={13} /></button>
+          <BotonRecargar onClick={refrescar} />
         </div>
         <MesField value={mesConsulta} onChange={setMesConsulta} />
         <div className="ec-field" style={{ marginTop: 10, marginBottom: 0 }}>
@@ -1861,7 +1877,7 @@ function StockTab({ vendor, products, stock, loadError, onChanged }) {
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "18px 0 10px" }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: TOKENS.textSoft }}>REGISTROS</span>
-        <button className="ec-btn ec-btn-ghost" style={{ padding: "5px 9px" }} onClick={onChanged}><RefreshCw size={13} /></button>
+        <BotonRecargar onClick={onChanged} />
       </div>
       {loadError && <div className="ec-error">{loadError}</div>}
       {stock === null ? <Spinner label="Cargando..." /> : stock.length === 0 ? (
@@ -1935,7 +1951,7 @@ function RendicionesTab({ vendor, rendiciones, error, onChanged }) {
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: TOKENS.textSoft }}>HISTORIAL DE RENDICIONES</span>
-        <button className="ec-btn ec-btn-ghost" style={{ padding: "5px 9px" }} onClick={onChanged}><RefreshCw size={13} /></button>
+        <BotonRecargar onClick={onChanged} />
       </div>
       {rendiciones.length === 0 ? (
         <div className="ec-empty">Todavía no hay rendiciones cargadas.</div>
