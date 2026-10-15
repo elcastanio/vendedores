@@ -586,13 +586,9 @@ function datosResumenDespacho(datos, fecha, despacho, vendor, mesNombre) {
     porProducto.set(l.producto, (porProducto.get(l.producto) || 0) + entregadas);
     porCategoria[l.categoria] = (porCategoria[l.categoria] || 0) + total;
   });
-  // Faltantes: lo que faltó de este despacho + lo que sigue sin despachar de esos mismos pedidos.
-  const pedidosDelDespacho = new Set(delDespacho.map((l) => `${l.dia}|${l.cliente}`));
+  // Faltantes: solo lo que se marcó como faltante en las líneas de este despacho.
   const mapaFalt = new Map();
   delDespacho.forEach((l) => sumarFaltante(mapaFalt, l.producto, unidadesFalt(l)));
-  datos.forEach((l) => {
-    if (!l.despachado && pedidosDelDespacho.has(`${l.dia}|${l.cliente}`)) sumarFaltante(mapaFalt, l.producto, Number(l.unidades) || 0);
-  });
   const alfabetico = (x, y) => String(x.producto).localeCompare(String(y.producto), "es", { sensitivity: "base" });
   return {
     vendorNombre: vendor.nombre, fecha, mesNombre,
@@ -723,16 +719,12 @@ function sumarFaltante(mapa, producto, n) {
 function textoFaltantes(mapa) {
   return Array.from(mapa.entries()).map(([p, n]) => `${p} (${n} u.)`);
 }
-// Faltantes de un despacho (las líneas que salieron en esa fecha): lo que faltó
-// (en unidades) + lo que sigue sin despachar de esos mismos pedidos.
+// Faltantes de un despacho (las líneas que salieron en esa fecha): solo lo que se marcó
+// como faltante (en unidades). Lo que sigue pendiente espera su propio despacho.
 function faltantesDeDespacho(lineasMes, fecha) {
   const delDespacho = lineasMes.filter((l) => l.despachado && l.fechaDespacho === fecha);
-  const pedidos = new Set(delDespacho.map((l) => `${l.dia}|${l.cliente}`));
   const m = new Map();
   delDespacho.forEach((l) => sumarFaltante(m, l.producto, unidadesFalt(l)));
-  lineasMes.forEach((l) => {
-    if (!l.despachado && pedidos.has(`${l.dia}|${l.cliente}`)) sumarFaltante(m, l.producto, Number(l.unidades) || 0);
-  });
   return textoFaltantes(m);
 }
 
@@ -955,11 +947,10 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
 
     const gruposPendientes = Array.from(pendientesPorSemana.values()).sort((a, b) => a.key.localeCompare(b.key));
     const semanasCompletas = Array.from(despachosPorClave.values()).sort((a, b) => b.sort.localeCompare(a.sort)).map((g) => {
-      // Faltantes del despacho: lo marcado + lo que falta enviar de esos mismos pedidos.
+      // Faltantes del despacho: solo lo marcado como faltante en sus líneas.
       const lineasGrupo = g.ordenes.flatMap((o) => o.lineas);
       const m = new Map();
       lineasGrupo.forEach((l) => sumarFaltante(m, l.producto, unidadesFalt(l)));
-      g.ordenKeys.forEach((ok) => (pendientesPorPedido.get(ok) || []).forEach((l) => sumarFaltante(m, l.producto, Number(l.unidades) || 0)));
       return { ...g, faltantes: textoFaltantes(m) };
     });
     return { gruposPendientes, semanasCompletas, ordenes };
