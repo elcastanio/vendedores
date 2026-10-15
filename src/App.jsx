@@ -1828,10 +1828,15 @@ function StockTab({ vendor, products, stock, loadError, onChanged }) {
     } catch (e) { setError("No se pudo guardar: " + e.message); }
     setSaving(false);
   };
-  const marcarVendido = async (fila) => {
-    try { await sheets.updateStockEstadoSheet(vendor.sheetUrl, fila, "Vendido"); onChanged(); }
+  const marcarEstado = async (s, estado) => {
+    const texto = estado === "Vendido" ? "vendido" : "devuelto a casa central";
+    if (!confirm(`¿Marcar ${s.producto} × ${s.unidades} como ${texto}? Ya no figurará más en tu stock.`)) return;
+    setError("");
+    try { await sheets.updateStockEstadoSheet(vendor.sheetUrl, s.fila, estado); onChanged(); }
     catch (e) { setError(e.message); }
   };
+  const norm = (e) => String(e || "").trim().toLowerCase();
+  const enStock = (s) => norm(s.estado) !== "vendido" && norm(s.estado) !== "devuelto";
 
   if (!vendor.sheetUrl) return null;
 
@@ -1839,7 +1844,7 @@ function StockTab({ vendor, products, stock, loadError, onChanged }) {
     <>
       <div className="ec-card">
         <h3><Package size={16} /> Registrar mercadería de más</h3>
-        <div className="ec-sub" style={{ marginBottom: 12 }}>Si en un envío te llegó algo de más, registralo acá. Cuando lo vendas, marcalo como "Vendido".</div>
+        <div className="ec-sub" style={{ marginBottom: 12 }}>Si en un envío te llegó algo de más, registralo acá. Cuando lo vendas o lo devuelvas a casa central, marcalo y deja de figurar en tu stock.</div>
         <FechaField label="Fecha" value={fecha} onChange={setFecha} />
         <div className="ec-field"><label>Producto</label>
           <ProductPicker products={products} value={productoId} onChange={setProductoId} placeholder="Escribí para buscar un producto..." />
@@ -1859,16 +1864,38 @@ function StockTab({ vendor, products, stock, loadError, onChanged }) {
       {stock === null ? <Spinner label="Cargando..." /> : stock.length === 0 ? (
         <div className="ec-empty">Todavía no registraste mercadería de más.</div>
       ) : (
-        [...stock].reverse().map((s) => (
-          <div className="ec-pedido-row" key={s.fila}>
-            <div className="ec-pedido-top">
-              <div><div className="ec-pedido-cliente">{s.producto} × {s.unidades}</div><div className="ec-pedido-meta">{s.fecha}</div></div>
-              <span className={`ec-badge ${s.estado === "Vendido" ? "ec-badge-desp" : "ec-badge-pend"}`}>{s.estado}</span>
-            </div>
-            {s.observacion && <div className="ec-note">{s.observacion}</div>}
-            {s.estado !== "Vendido" && <button className="ec-btn ec-btn-ghost" style={{ marginTop: 8, padding: "6px 10px" }} onClick={() => marcarVendido(s.fila)}>Marcar como vendido</button>}
-          </div>
-        ))
+        <>
+          {(() => {
+            const vigentes = [...stock].reverse().filter(enStock);
+            const cerrados = [...stock].reverse().filter((s) => !enStock(s));
+            const tarjeta = (s, activo) => (
+              <div className="ec-pedido-row" key={s.fila} style={activo ? undefined : { opacity: 0.65 }}>
+                <div className="ec-pedido-top">
+                  <div><div className="ec-pedido-cliente">{s.producto} × {s.unidades}</div><div className="ec-pedido-meta">{s.fecha}</div></div>
+                  <span className={`ec-badge ${norm(s.estado) === "vendido" ? "ec-badge-desp" : activo ? "ec-badge-pend" : ""}`}>{s.estado}</span>
+                </div>
+                {s.observacion && <div className="ec-note">{s.observacion}</div>}
+                {activo && (
+                  <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                    <button className="ec-btn ec-btn-ghost" style={{ padding: "6px 10px" }} onClick={() => marcarEstado(s, "Vendido")}>Marcar como vendido</button>
+                    <button className="ec-btn ec-btn-ghost" style={{ padding: "6px 10px" }} onClick={() => marcarEstado(s, "Devuelto")}>Marcar como devuelto</button>
+                  </div>
+                )}
+              </div>
+            );
+            return (
+              <>
+                {vigentes.length === 0 ? <div className="ec-empty">No tenés mercadería en stock ahora.</div> : vigentes.map((s) => tarjeta(s, true))}
+                {cerrados.length > 0 && (
+                  <>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: TOKENS.textSoft, margin: "18px 0 10px" }}>YA NO ESTÁN EN STOCK (vendidos o devueltos)</div>
+                    {cerrados.map((s) => tarjeta(s, false))}
+                  </>
+                )}
+              </>
+            );
+          })()}
+        </>
       )}
     </>
   );
