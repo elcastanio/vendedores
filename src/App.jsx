@@ -2553,7 +2553,7 @@ function PedidosAdmin({ vendors }) {
         sort = "0" + (p.fechaDespacho || key);
       } else {
         gk = "P:" + key;
-        glabel = `${label} · sin despachar`;
+        glabel = `${label} · Sin despachar`;
         sort = "1" + key; // los pendientes primero
       }
       if (!mapa.has(gk)) mapa.set(gk, { key: gk, label: glabel, sort, lineas: [] });
@@ -2671,7 +2671,7 @@ function PedidosAdmin({ vendors }) {
               <div className="ec-pedido-top" style={{ cursor: "pointer" }} onClick={() => setSemanaAbierta(abierta ? null : sem.key)}>
                 <div>
                   <div className="ec-pedido-cliente">{sem.label}</div>
-                  <div className="ec-pedido-meta">{sem.lineas.length} línea(s) · {fmtMoney(total)}</div>
+                  <div className="ec-pedido-meta" style={{ fontSize: 17, fontWeight: 700, color: TOKENS.text, marginTop: 2 }}>{sem.lineas.length} línea(s) · {fmtMoney(total)}</div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span className={`ec-badge ${claseBadgeEstado(estado)}`}>{etiquetaEstado(estado)}</span>
@@ -2691,7 +2691,7 @@ function PedidosAdmin({ vendors }) {
                     </div>
                   </div>
                 ) : (
-                  <button className="ec-btn ec-btn-primary" style={{ marginTop: 10 }} onClick={() => setConfirmProd(sem.key)}>
+                  <button className="ec-btn ec-btn-primary" style={{ marginTop: 10, marginRight: 12 }} onClick={() => setConfirmProd(sem.key)}>
                     <Check size={15} /> Enviar a producción ({lineasPendientes(sem).length})
                   </button>
                 )
