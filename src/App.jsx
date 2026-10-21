@@ -12,6 +12,9 @@ import { TERMINOS_VERSION, TERMINOS_TITULO, TERMINOS_CLAUSULAS } from "./termino
 import { soportaPush, suscribirVendedor, yaEstaSuscripto, registrarSiYaSuscripto } from "./push";
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "castano2026";
+// Usuario de administración con acceso solo a la pestaña Pedidos.
+const PEDIDOS_USUARIO = "lvalladares";
+const PEDIDOS_PASSWORD = "1234";
 
 const TOKENS = {
   bg: "#F5F8FC", surface: "#FFFFFF", border: "#DAE2EC", text: "#14253A", textSoft: "#5A6B7E",
@@ -196,7 +199,7 @@ class ErrorBoundary extends React.Component {
 
 // ---------------- LOGIN ----------------
 
-function LoginScreen({ vendors, onVendorLogin, onAdminLogin }) {
+function LoginScreen({ vendors, onVendorLogin, onAdminLogin, onPedidosLogin }) {
   const [usuario, setUsuario] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -207,6 +210,11 @@ function LoginScreen({ vendors, onVendorLogin, onAdminLogin }) {
     // El administrador entra con el usuario "admin" y su contraseña, en los mismos campos que los vendedores.
     if (usuario.trim().toLowerCase() === "admin") {
       if (password === ADMIN_PASSWORD) onAdminLogin();
+      else setError("Usuario o contraseña incorrectos.");
+      return;
+    }
+    if (usuario.trim().toLowerCase() === PEDIDOS_USUARIO) {
+      if (password === PEDIDOS_PASSWORD) onPedidosLogin();
       else setError("Usuario o contraseña incorrectos.");
       return;
     }
@@ -1972,29 +1980,29 @@ function RendicionesTab({ vendor, rendiciones, error, onChanged }) {
 
 // ---------------- ADMIN APP ----------------
 
-function AdminApp({ vendors, products, onLogout, refreshVendors, refreshProducts }) {
-  const [tab, setTab] = useState("vendedores");
+function AdminApp({ vendors, products, onLogout, refreshVendors, refreshProducts, soloPedidos }) {
+  const [tab, setTab] = useState(soloPedidos ? "pedidos" : "vendedores");
   return (
     <div className="ec-admin-shell">
       <div className="ec-topbar">
-        <div><div style={{ display: "flex", alignItems: "center", gap: 8 }}><img src="/logo.png" alt="El Castaño" style={{ height: 20 }} /><span className="ec-serif" style={{ fontSize: 14, color: TOKENS.textSoft }}>· Admin</span></div><div className="ec-sub" style={{ marginTop: 4 }}>Panel de gestión de vendedores</div></div>
+        <div><div style={{ display: "flex", alignItems: "center", gap: 8 }}><img src="/logo.png" alt="El Castaño" style={{ height: 20 }} /><span className="ec-serif" style={{ fontSize: 14, color: TOKENS.textSoft }}>· Admin</span></div><div className="ec-sub" style={{ marginTop: 4 }}>{soloPedidos ? "Pedidos de vendedores" : "Panel de gestión de vendedores"}</div></div>
         <button className="ec-btn ec-btn-ghost" onClick={onLogout}><LogOut size={14} /> Salir</button>
       </div>
       <div className="ec-admin-tabs">
-        <button className={`ec-admin-tab ${tab === "vendedores" ? "active" : ""}`} onClick={() => setTab("vendedores")}><Users size={14} /> Vendedores</button>
-        <button className={`ec-admin-tab ${tab === "productos" ? "active" : ""}`} onClick={() => setTab("productos")}><Boxes size={14} /> Productos</button>
-        <button className={`ec-admin-tab ${tab === "objetivos" ? "active" : ""}`} onClick={() => setTab("objetivos")}><Target size={14} /> Objetivos</button>
+        {!soloPedidos && <button className={`ec-admin-tab ${tab === "vendedores" ? "active" : ""}`} onClick={() => setTab("vendedores")}><Users size={14} /> Vendedores</button>}
+        {!soloPedidos && <button className={`ec-admin-tab ${tab === "productos" ? "active" : ""}`} onClick={() => setTab("productos")}><Boxes size={14} /> Productos</button>}
+        {!soloPedidos && <button className={`ec-admin-tab ${tab === "objetivos" ? "active" : ""}`} onClick={() => setTab("objetivos")}><Target size={14} /> Objetivos</button>}
         <button className={`ec-admin-tab ${tab === "pedidos" ? "active" : ""}`} onClick={() => setTab("pedidos")}><ListChecks size={14} /> Pedidos</button>
-        <button className={`ec-admin-tab ${tab === "catalogos" ? "active" : ""}`} onClick={() => setTab("catalogos")}><BookOpen size={14} /> Catálogos</button>
-        <button className={`ec-admin-tab ${tab === "terminos" ? "active" : ""}`} onClick={() => setTab("terminos")}><ShieldCheck size={14} /> Términos</button>
+        {!soloPedidos && <button className={`ec-admin-tab ${tab === "catalogos" ? "active" : ""}`} onClick={() => setTab("catalogos")}><BookOpen size={14} /> Catálogos</button>}
+        {!soloPedidos && <button className={`ec-admin-tab ${tab === "terminos" ? "active" : ""}`} onClick={() => setTab("terminos")}><ShieldCheck size={14} /> Términos</button>}
       </div>
       <div className="ec-content" style={{ paddingBottom: 40 }}>
-        {tab === "vendedores" && <VendedoresAdmin vendors={vendors} refreshVendors={refreshVendors} />}
-        {tab === "productos" && <ProductosAdmin products={products} refreshProducts={refreshProducts} />}
-        {tab === "objetivos" && <ObjetivosAdmin vendors={vendors} />}
+        {!soloPedidos && tab === "vendedores" && <VendedoresAdmin vendors={vendors} refreshVendors={refreshVendors} />}
+        {!soloPedidos && tab === "productos" && <ProductosAdmin products={products} refreshProducts={refreshProducts} />}
+        {!soloPedidos && tab === "objetivos" && <ObjetivosAdmin vendors={vendors} />}
         {tab === "pedidos" && <PedidosAdmin vendors={vendors} />}
-        {tab === "catalogos" && <CatalogosAdmin />}
-        {tab === "terminos" && <TerminosAdmin vendors={vendors} />}
+        {!soloPedidos && tab === "catalogos" && <CatalogosAdmin />}
+        {!soloPedidos && tab === "terminos" && <TerminosAdmin vendors={vendors} />}
       </div>
     </div>
   );
@@ -2810,9 +2818,9 @@ function AppInner() {
           <div style={{ fontSize: 13, color: TOKENS.textSoft }}>{loadError}</div>
         </div></div></div>
       ) : session === null ? (
-        <LoginScreen vendors={vendors} onVendorLogin={loginVendedor} onAdminLogin={() => setSession({ role: "admin" })} />
+        <LoginScreen vendors={vendors} onVendorLogin={loginVendedor} onAdminLogin={() => setSession({ role: "admin" })} onPedidosLogin={() => setSession({ role: "admin", soloPedidos: true })} />
       ) : session.role === "admin" ? (
-        <AdminApp vendors={vendors} products={products} onLogout={cerrarSesion} refreshVendors={refreshVendors} refreshProducts={refreshProducts} />
+        <AdminApp vendors={vendors} products={products} onLogout={cerrarSesion} refreshVendors={refreshVendors} refreshProducts={refreshProducts} soloPedidos={!!session.soloPedidos} />
       ) : activeVendor ? (
         <VendorApp vendor={activeVendor} products={products} onLogout={cerrarSesion} />
       ) : (
