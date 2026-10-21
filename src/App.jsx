@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import {
   ClipboardList, Target, Package, Wallet, LogOut, Plus, Check, X, Loader2,
   ShieldCheck, Users, Boxes, ListChecks, ChevronRight, AlertTriangle, Upload,
-  ExternalLink, RefreshCw, Bell, BellOff, Pencil, FileDown, Trash2, Search, BookOpen,
+  ExternalLink, RefreshCw, Bell, BellOff, Pencil, FileDown, Printer, Trash2, Search, BookOpen,
 } from "lucide-react";
 import * as db from "./db";
 import * as sheets from "./sheetsClient";
@@ -2599,16 +2599,16 @@ function PedidosAdmin({ vendors }) {
 
   // Genera el PDF de detalle del grupo (con el cálculo de bolsas para armar los pedidos).
   // Si falta el gramaje de algún producto, no calcula nada y avisa cuál es.
-  const generarDetalle = async (sem) => {
-    setError(""); setOk(""); setGenerandoDetalle(sem.key);
+  const generarDetalle = async (sem, modo = "descargar") => {
+    setError(""); setOk(""); setGenerandoDetalle(sem.key + modo);
     try {
       const lineas = sem.lineas.filter((l) => String(l.producto || "").trim());
       const b = calcularBolsas(lineas);
       if (b.sinGramaje.length) {
         setError("No puedo calcular las bolsas porque falta el gramaje de: " + b.sinGramaje.join(", ") + ". Avisame cuánto pesa cada uno y lo cargo.");
       } else {
-        await descargarDetallePedido({ vendorNombre: vendor.nombre, fecha: hoyAR(), lineas, bolsasTexto: textoBolsas(b) });
-        const partes = [`Detalle generado. Bolsas: ${textoBolsas(b)}.`];
+        await descargarDetallePedido({ vendorNombre: vendor.nombre, fecha: hoyAR(), lineas, bolsasTexto: textoBolsas(b) }, modo);
+        const partes = [`${modo === "imprimir" ? "Detalle listo para imprimir" : "Detalle descargado"}. Bolsas: ${textoBolsas(b)}.`];
         partes.push(b.sinBolsa.length ? "Sin bolsa: " + b.sinBolsa.map((c) => c.cliente).join(", ") + "." : "Todos los clientes minoristas llevan bolsa.");
         if (b.variasBolsas.length) partes.push("Más de una bolsa: " + b.variasBolsas.map((c) => `${c.cliente} (${textoBolsas(c)})`).join(", ") + ".");
         if (b.fuera.length) partes.push("Fuera de bolsa: " + b.fuera.map((f) => `${f.producto} (${f.cliente})`).join(", ") + ".");
@@ -2727,8 +2727,11 @@ function PedidosAdmin({ vendors }) {
                   </button>
                 )
               )}
-              <button className="ec-btn ec-btn-ghost" style={{ marginTop: 10, marginRight: 12 }} disabled={generandoDetalle === sem.key} onClick={() => generarDetalle(sem)}>
-                {generandoDetalle === sem.key ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <FileDown size={15} />} Detalle
+              <button className="ec-btn ec-btn-ghost" style={{ marginTop: 10, marginRight: 12 }} disabled={!!generandoDetalle} onClick={() => generarDetalle(sem, "descargar")}>
+                {generandoDetalle === sem.key + "descargar" ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <FileDown size={15} />} Detalle
+              </button>
+              <button className="ec-btn ec-btn-ghost" style={{ marginTop: 10, marginRight: 12 }} disabled={!!generandoDetalle} onClick={() => generarDetalle(sem, "imprimir")}>
+                {generandoDetalle === sem.key + "imprimir" ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <Printer size={15} />} Imprimir
               </button>
               {formSemana === sem.key ? (
                 <div style={{ marginTop: 10 }}>
