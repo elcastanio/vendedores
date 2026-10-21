@@ -525,3 +525,177 @@ export async function descargarTerminosFirmados({ titulo, clausulas, version, no
   const nombreArchivo = `Terminos y condiciones - ${nombre}.pdf`.replace(/[\\/:*?"<>|]/g, "");
   await compartirODescargar(doc, nombreArchivo);
 }
+
+// ---------------------------------------------------------------------------
+// Detalle de pedido consolidado (para armar los pedidos): encabezado con totales y bolsas,
+// resumen por cliente y detalle de productos por cliente.
+// lineas: [{ categoria, cliente, producto, unidades, precio, total }]
+// ---------------------------------------------------------------------------
+const DET_AZUL = [27, 90, 122];
+const DET_TITULO = [27, 70, 100];
+const DET_CLARO = [234, 241, 245];
+const DET_BORDE = [190, 208, 220];
+
+function fmtDet(n) {
+  return "$ " + Math.round(Number(n) || 0).toLocaleString("es-AR", { maximumFractionDigits: 0 });
+}
+
+function fechaDetalle(iso) {
+  const [y, m, d] = String(iso).split("-");
+  return `${d}/${m}/${y}`;
+}
+
+export async function armarDetallePedido({ vendorNombre, fecha, lineas, bolsasTexto }) {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageH = 842, X = 44, W = 507, limiteY = pageH - 48;
+  let y = 56;
+
+  // Agrupa por cliente (y canal), en el orden en que aparecen.
+  const grupos = [];
+  const mapa = new Map();
+  lineas.forEach((l) => {
+    const k = String(l.cliente || "").trim().toLowerCase() + "|" + String(l.categoria || "").trim().toLowerCase();
+    if (!mapa.has(k)) { const g = { cliente: String(l.cliente || "").trim(), canal: String(l.categoria || "").trim(), unidades: 0, subtotal: 0, items: [] }; mapa.set(k, g); grupos.push(g); }
+    const g = mapa.get(k);
+    g.unidades += Number(l.unidades) || 0;
+    g.subtotal += Number(l.total) || 0;
+    g.items.push(l);
+  });
+  const totalUnidades = grupos.reduce((a, g) => a + g.unidades, 0);
+  const totalPedido = grupos.reduce((a, g) => a + g.subtotal, 0);
+  const canales = Array.from(new Set(lineas.map((l) => String(l.categoria || "").trim()).filter(Boolean)));
+
+  const nueva = () => { doc.addPage(); y = 48; };
+  const hace = (alto) => { if (y + alto > limiteY) nueva(); };
+  const celda = (x, w, h, relleno) => {
+    doc.setDrawColor(...DET_BORDE); doc.setLineWidth(0.5);
+    if (relleno) { doc.setFillColor(...relleno); doc.rect(x, y, w, h, "FD"); } else doc.rect(x, y, w, h, "S");
+  };
+  const texto = (t, x, base, { size = 8.5, bold = false, color = [0, 0, 0], align = "left" } = {}) => {
+    doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setFontSize(size); doc.setTextColor(...color);
+    doc.text(String(t), x, base, { align });
+  };
+
+  // Título
+  texto("PRESUPUESTO", X, y + 20, { size: 24, bold: true, color: DET_TITULO });
+  y += 40;
+  texto(vendorNombre, X, y, { size: 14, bold: true, color: DET_TITULO });
+  y += 14;
+
+  // Datos generales
+  const filas = [
+    ["Fecha", fechaDetalle(fecha), "Vendedor/a", vendorNombre],
+    ["Tipo de pedido", "Pedido consolidado", "Clientes", String(grupos.length)],
+    ["Canal", canales.join(" · ") || "-", "Registros", String(lineas.length)],
+  ];
+  const cw = [105, 150, 105, 147], rh = 17;
+  filas.forEach((f) => {
+    let x = X;
+    f.forEach((c, i) => {
+      celda(x, cw[i], rh, null);
+      texto(c, x + 6, y + 11.5, { size: 8, bold: i % 2 === 0, color: i % 2 === 0 ? DET_TITULO : DET_AZUL });
+      x += cw[i];
+    });
+    y += rh;
+  });
+  celda(X, cw[0], rh, null); celda(X + cw[0], W - cw[0], rh, null);
+  texto("Bolsas", X + 6, y + 11.5, { size: 8, bold: true, color: DET_TITULO });
+  texto(bolsasTexto, X + cw[0] + 6, y + 11.5, { size: 8, bold: true, color: DET_TITULO });
+  y += rh + 10;
+
+  // Totales
+  const mitad = W / 2;
+  [["TOTAL DE UNIDADES", String(totalUnidades), X], ["TOTAL DEL PEDIDO", fmtDet(totalPedido), X + mitad]].forEach((b) => {
+    doc.setFillColor(...DET_AZUL); doc.rect(b[2], y, mitad, 17, "F");
+    texto(b[0], b[2] + mitad / 2, y + 11.5, { size: 8.5, bold: true, color: [255, 255, 255], align: "center" });
+    doc.setFillColor(...DET_CLARO); doc.rect(b[2], y + 17, mitad, 32, "F");
+    texto(b[1], b[2] + mitad / 2, y + 39, { size: 16, bold: true, color: [0, 0, 0], align: "center" });
+  });
+  y += 49 + 24;
+
+  // Resumen por cliente
+  texto("Resumen por cliente", X, y, { size: 14, bold: true, color: DET_TITULO });
+  y += 10;
+  const rc = [213, 107, 80, 107];
+  const encabezadoResumen = () => {
+    let x = X;
+    ["Cliente", "Canal", "Unidades", "Subtotal"].forEach((t, i) => {
+      doc.setFillColor(...DET_AZUL); doc.rect(x, y, rc[i], 17, "F");
+      if (i >= 2) texto(t, x + rc[i] - 6, y + 11.5, { size: 8, bold: true, color: [255, 255, 255], align: "right" });
+      else texto(t, x + 6, y + 11.5, { size: 8, bold: true, color: [255, 255, 255] });
+      x += rc[i];
+    });
+    y += 17;
+  };
+  encabezadoResumen();
+  grupos.forEach((g, idx) => {
+    if (y + 16.5 > limiteY) { nueva(); encabezadoResumen(); }
+    let x = X;
+    [g.cliente, g.canal, String(g.unidades), fmtDet(g.subtotal)].forEach((t, i) => {
+      celda(x, rc[i], 16.5, idx % 2 === 1 ? DET_CLARO : null);
+      if (i >= 2) texto(t, x + rc[i] - 6, y + 11.5, { size: 8, align: "right" });
+      else texto(t, x + 6, y + 11.5, { size: 8 });
+      x += rc[i];
+    });
+    y += 16.5;
+  });
+  y += 26;
+
+  // Detalle de productos por cliente
+  hace(60);
+  texto("Detalle de productos por cliente", X, y, { size: 14, bold: true, color: DET_TITULO });
+  y += 10;
+  const dc = [213, 107, 80, 107]; // Producto, Cant., Precio unit., Importe
+  const dibujarEncabezadoCliente = (g, continua) => {
+    doc.setFillColor(...DET_AZUL); doc.rect(X, y, W, 18, "F");
+    texto(g.cliente + (continua ? " (continuación)" : ""), X + 6, y + 12.5, { size: 8.5, bold: true, color: [255, 255, 255] });
+    texto(g.canal, X + 276, y + 12.5, { size: 8.5, bold: true, color: [255, 255, 255], align: "center" });
+    texto(g.unidades + " un.", X + 360, y + 12.5, { size: 8.5, bold: true, color: [255, 255, 255], align: "center" });
+    texto(fmtDet(g.subtotal), X + W - 6, y + 12.5, { size: 8.5, bold: true, color: [255, 255, 255], align: "right" });
+    y += 18;
+    let x = X;
+    ["Producto", "Cant.", "Precio unit.", "Importe"].forEach((t, i) => {
+      celda(x, dc[i], 17, DET_CLARO);
+      texto(t, x + 6, y + 11.5, { size: 8, bold: true });
+      x += dc[i];
+    });
+    y += 17;
+  };
+  grupos.forEach((g) => {
+    // Si el bloque entra en una página, se mantiene junto; si no, se parte con "continuación".
+    const altoBloque = 18 + 17 + g.items.reduce((acc, l) => acc + Math.max(16.5, doc.splitTextToSize(String(l.producto || ""), dc[0] - 12).length * 10 + 6.5), 0);
+    if (altoBloque <= limiteY - 48) hace(altoBloque); else hace(18 + 17 + 34);
+    dibujarEncabezadoCliente(g, false);
+    g.items.forEach((l) => {
+      const nombre = doc.splitTextToSize(String(l.producto || ""), dc[0] - 12);
+      const alto = Math.max(16.5, nombre.length * 10 + 6.5);
+      if (y + alto > limiteY) { nueva(); dibujarEncabezadoCliente(g, true); }
+      let x = X;
+      const vals = [null, String(l.unidades), fmtDet(l.precio), fmtDet(l.total)];
+      dc.forEach((w, i) => {
+        celda(x, w, alto, null);
+        if (i === 0) { doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...DET_AZUL); doc.text(nombre, x + 6, y + 11.5); }
+        else texto(vals[i], x + w - 6, y + 11.5, { size: 8, align: "right" });
+        x += w;
+      });
+      y += alto;
+    });
+    y += 12;
+  });
+
+  // Total general
+  hace(24);
+  celda(X, W, 20, DET_CLARO);
+  texto("TOTAL GENERAL", X + 6, y + 13.5, { size: 9, bold: true, color: DET_TITULO });
+  texto(totalUnidades + " unidades", X + 213 + 107 + 80 - 6, y + 13.5, { size: 9, bold: true, align: "right" });
+  texto(fmtDet(totalPedido), X + W - 6, y + 13.5, { size: 9, bold: true, align: "right" });
+
+  const [yy, mm, dd] = String(fecha).split("-");
+  const nombreArchivo = `Detalle ${vendorNombre} ${dd}-${mm}-${yy}.pdf`.replace(/[\\/:*?"<>|]/g, "");
+  return { doc, nombreArchivo };
+}
+
+export async function descargarDetallePedido(datos) {
+  const { doc, nombreArchivo } = await armarDetallePedido(datos);
+  await compartirODescargar(doc, nombreArchivo);
+}
