@@ -695,7 +695,23 @@ export async function armarDetallePedido({ vendorNombre, fecha, lineas, bolsasTe
   return { doc, nombreArchivo };
 }
 
-export async function descargarDetallePedido(datos) {
+// modo "descargar": baja el PDF directo a la compu (sin menú de compartir).
+// modo "imprimir": lo abre en una pestaña nueva con el cuadro de impresión.
+export async function descargarDetallePedido(datos, modo = "descargar") {
   const { doc, nombreArchivo } = await armarDetallePedido(datos);
-  await compartirODescargar(doc, nombreArchivo);
+  const blob = doc.output("blob");
+  const url = URL.createObjectURL(blob);
+  if (modo === "imprimir") {
+    doc.autoPrint();
+    const ventana = window.open(doc.output("bloburl"), "_blank");
+    if (!ventana) throw new Error("El navegador bloqueó la ventana de impresión. Permití las ventanas emergentes para este sitio y volvé a intentar.");
+    return;
+  }
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nombreArchivo;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
