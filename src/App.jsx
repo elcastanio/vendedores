@@ -2524,6 +2524,8 @@ function PedidosAdmin({ vendors }) {
   const [editingRow, setEditingRow] = useState(null);
   const [editVals, setEditVals] = useState({});
   const [semanaAbierta, setSemanaAbierta] = useState(null);
+  const [confirmProd, setConfirmProd] = useState(null); // clave del grupo que espera confirmación
+  const [enviandoProd, setEnviandoProd] = useState(null);
 
   const vendor = vendors.find((v) => v.id === vendorId);
   const NOMBRES_MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
@@ -2581,6 +2583,28 @@ function PedidosAdmin({ vendors }) {
   };
 
   const despachoDe = (key) => ((pedidos && pedidos.despachos) || []).find((d) => d.semana === key && d.mes.toLowerCase() === mes.toLowerCase());
+
+  // Líneas que todavía no se enviaron a producción (sin estado o PENDIENTE).
+  const lineasPendientes = (sem) => sem.lineas.filter((l) => !l.estado || l.estado === "PENDIENTE");
+
+  // Pasa las líneas pendientes del grupo a EN PROCESO y las copia a la planilla general.
+  const enviarAProduccion = async (sem) => {
+    setError(""); setOk(""); setEnviandoProd(sem.key);
+    try {
+      const pend = lineasPendientes(sem);
+      const r = await sheets.enviarAProduccionSheet(vendor.sheetUrl, {
+        mes, vendedor: vendor.nombre,
+        lineas: pend.map((l) => ({ fila: l.fila, cliente: l.cliente, producto: l.producto })),
+      });
+      setConfirmProd(null);
+      setPedidos(await sheets.fetchPedidosSheet(vendor.sheetUrl, mes));
+      setOk(`Enviado a producción: ${r.enviadas} línea(s) pasaron a En proceso y se copiaron a la planilla general (desde la fila ${r.filaGeneral}).` + (r.saltadas ? ` ${r.saltadas} no se enviaron porque ya no estaban pendientes.` : ""));
+    } catch (e) {
+      setError("No se pudo enviar a producción: " + e.message);
+      setPedidos(await sheets.fetchPedidosSheet(vendor.sheetUrl, mes).catch(() => pedidos));
+    }
+    setEnviandoProd(null);
+  };
 
   const abrirDespacho = (semana) => {
     const d = despachoDe(semana.key);
@@ -2655,6 +2679,23 @@ function PedidosAdmin({ vendors }) {
                 </div>
               </div>
               <ResumenDespacho faltantes={sem.key.indexOf("D:") === 0 ? faltantesDeDespacho(pedidos, sem.key.slice(2)) : faltantesDe(sem.lineas)} despacho={despachoDe(sem.key)} />
+              {sem.key.indexOf("P:") === 0 && lineasPendientes(sem).length > 0 && (
+                confirmProd === sem.key ? (
+                  <div className="ec-note" style={{ marginTop: 10 }}>
+                    <div>Se pasan <b>{lineasPendientes(sem).length} línea(s)</b> a <b>En proceso</b> y se copian a la planilla general. Después el vendedor ya no puede modificarlas.</div>
+                    <div className="ec-row-actions" style={{ marginTop: 8 }}>
+                      <button className="ec-btn ec-btn-primary" disabled={enviandoProd === sem.key} onClick={() => enviarAProduccion(sem)}>
+                        {enviandoProd === sem.key ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check size={15} />} Confirmar envío
+                      </button>
+                      <button className="ec-btn ec-btn-ghost" disabled={enviandoProd === sem.key} onClick={() => setConfirmProd(null)}>Cancelar</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button className="ec-btn ec-btn-primary" style={{ marginTop: 10 }} onClick={() => setConfirmProd(sem.key)}>
+                    <Check size={15} /> Enviar a producción ({lineasPendientes(sem).length})
+                  </button>
+                )
+              )}
               {formSemana === sem.key ? (
                 <div style={{ marginTop: 10 }}>
                   <div className="ec-row2">
