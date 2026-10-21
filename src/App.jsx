@@ -7,7 +7,8 @@ import {
 } from "lucide-react";
 import * as db from "./db";
 import * as sheets from "./sheetsClient";
-import { descargarComprobantePedido, descargarResumenDespacho, descargarTerminosFirmados } from "./pdfTicket";
+import { descargarComprobantePedido, descargarResumenDespacho, descargarTerminosFirmados, descargarDetallePedido } from "./pdfTicket";
+import { calcularBolsas, textoBolsas } from "./bolsas";
 import { TERMINOS_VERSION, TERMINOS_TITULO, TERMINOS_CLAUSULAS } from "./terminos";
 import { soportaPush, suscribirVendedor, yaEstaSuscripto, registrarSiYaSuscripto } from "./push";
 
@@ -2534,6 +2535,7 @@ function PedidosAdmin({ vendors }) {
   const [semanaAbierta, setSemanaAbierta] = useState(null);
   const [confirmProd, setConfirmProd] = useState(null); // clave del grupo que espera confirmación
   const [enviandoProd, setEnviandoProd] = useState(null);
+  const [generandoDetalle, setGenerandoDetalle] = useState(null);
 
   const vendor = vendors.find((v) => v.id === vendorId);
   const NOMBRES_MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
@@ -2594,6 +2596,27 @@ function PedidosAdmin({ vendors }) {
 
   // Líneas que todavía no se enviaron a producción (sin estado o PENDIENTE).
   const lineasPendientes = (sem) => sem.lineas.filter((l) => !l.estado || l.estado === "PENDIENTE");
+
+  // Genera el PDF de detalle del grupo (con el cálculo de bolsas para armar los pedidos).
+  // Si falta el gramaje de algún producto, no calcula nada y avisa cuál es.
+  const generarDetalle = async (sem) => {
+    setError(""); setOk(""); setGenerandoDetalle(sem.key);
+    try {
+      const lineas = sem.lineas.filter((l) => String(l.producto || "").trim());
+      const b = calcularBolsas(lineas);
+      if (b.sinGramaje.length) {
+        setError("No puedo calcular las bolsas porque falta el gramaje de: " + b.sinGramaje.join(", ") + ". Avisame cuánto pesa cada uno y lo cargo.");
+      } else {
+        await descargarDetallePedido({ vendorNombre: vendor.nombre, fecha: hoyAR(), lineas, bolsasTexto: textoBolsas(b) });
+        const partes = [`Detalle generado. Bolsas: ${textoBolsas(b)}.`];
+        partes.push(b.sinBolsa.length ? "Sin bolsa: " + b.sinBolsa.map((c) => c.cliente).join(", ") + "." : "Todos los clientes minoristas llevan bolsa.");
+        if (b.variasBolsas.length) partes.push("Más de una bolsa: " + b.variasBolsas.map((c) => `${c.cliente} (${textoBolsas(c)})`).join(", ") + ".");
+        if (b.fuera.length) partes.push("Fuera de bolsa: " + b.fuera.map((f) => `${f.producto} (${f.cliente})`).join(", ") + ".");
+        setOk(partes.join("\n"));
+      }
+    } catch (e) { setError("No se pudo generar el detalle: " + e.message); }
+    setGenerandoDetalle(null);
+  };
 
   // Pasa las líneas pendientes del grupo a EN PROCESO y las copia a la planilla general.
   const enviarAProduccion = async (sem) => {
@@ -2666,7 +2689,7 @@ function PedidosAdmin({ vendors }) {
       </div>
       {vendor && !vendor.sheetUrl && <div className="ec-error">Este vendedor todavía no tiene planilla vinculada.</div>}
       {error && <div className="ec-error">{error}</div>}
-      {ok && <div className="ec-ok">{ok}</div>}
+      {ok && <div className="ec-ok" style={{ whiteSpace: "pre-line" }}>{ok}</div>}
       {semanas === null ? <Spinner label="Cargando..." /> : semanas.length === 0 ? (
         <div className="ec-empty">No hay pedidos cargados en {mes} para este vendedor.</div>
       ) : (
@@ -2704,6 +2727,9 @@ function PedidosAdmin({ vendors }) {
                   </button>
                 )
               )}
+              <button className="ec-btn ec-btn-ghost" style={{ marginTop: 10, marginRight: 12 }} disabled={generandoDetalle === sem.key} onClick={() => generarDetalle(sem)}>
+                {generandoDetalle === sem.key ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <FileDown size={15} />} Detalle
+              </button>
               {formSemana === sem.key ? (
                 <div style={{ marginTop: 10 }}>
                   <div className="ec-row2">
