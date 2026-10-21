@@ -102,6 +102,13 @@ export async function fetchEquipoDesdeSheet(sheetUrl, mes) {
 }
 
 
+// Pasa líneas PENDIENTES a EN PROCESO y las copia a la planilla general de ventas.
+// "lineas" es [{ fila, cliente, producto }]; "vendedor" es el nombre tal cual está en la app.
+export async function enviarAProduccionSheet(sheetUrl, { mes, vendedor, lineas }) {
+  const sheetId = extraerSheetId(sheetUrl);
+  return llamar("enviarAProduccion", { sheetId, mes, vendedor, filas: lineas });
+}
+
 // Datos de cada despacho semanal (cajas y nota), guardados en la solapa
 // "Despachos" de la planilla del vendedor.
 export async function guardarDespachoSheet(sheetUrl, { mes, semana, cajas, nota }) {
