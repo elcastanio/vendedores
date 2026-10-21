@@ -90,7 +90,7 @@ function GlobalStyle() {
       .ec-progress-fill { height: 100%; background: ${TOKENS.olive}; border-radius: 20px 0 0 20px; transition: width 0.4s ease; }
       .ec-big-num { font-family: 'Fraunces', serif; font-size: 34px; font-weight: 600; line-height: 1; }
       .ec-login-wrap { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 32px 26px; }
-      .ec-admin-tabs { display: flex; gap: 6px; padding: 0 20px 14px; border-bottom: 1px solid ${TOKENS.border}; flex-wrap: wrap; }
+      .ec-admin-tabs { display: flex; gap: 6px; padding: 14px 20px; border-bottom: 1px solid ${TOKENS.border}; flex-wrap: wrap; }
       .ec-admin-tab { border: 1px solid ${TOKENS.border}; background: #fff; border-radius: 7px; padding: 8px 13px; font-size: 13px; font-weight: 600; color: ${TOKENS.textSoft}; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 6px; }
       .ec-admin-tab.active { background: ${TOKENS.oliveDark}; color: #fff; border-color: ${TOKENS.oliveDark}; }
       .ec-table { width: 100%; border-collapse: collapse; }
