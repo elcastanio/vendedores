@@ -389,6 +389,19 @@ function VendorApp({ vendor, products, onLogout }) {
         </div>
       </div>
       <div className="ec-content">
+        {(rendiciones || []).filter((r) => rendicionVencida(r) !== null).length > 0 && (() => {
+          const venc = rendiciones.filter((r) => rendicionVencida(r) !== null);
+          const masVieja = venc.reduce((a, b) => (rendicionVencida(b) > rendicionVencida(a) ? b : a));
+          return (
+            <div role="button" onClick={() => setTab("rendiciones")} style={{ background: "#FBE3E0", border: `1px solid ${TOKENS.danger}`, color: TOKENS.danger, borderRadius: 12, padding: "12px 14px", marginBottom: 12, display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+              <AlertTriangle size={20} style={{ flexShrink: 0 }} />
+              <div style={{ fontSize: 14, fontWeight: 600 }}>
+                {venc.length === 1 ? "Tenés 1 rendición" : `Tenés ${venc.length} rendiciones`} con más de {DIAS_RENDICION_VENCIDA} días sin pagar.
+                <div style={{ fontWeight: 400, fontSize: 13 }}>La más antigua es del {masVieja.fecha}. Tocá para verla.</div>
+              </div>
+            </div>
+          );
+        })()}
         {suscripto === false && soportaPush() && (
           <div className="ec-card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1934,6 +1947,25 @@ function StockTab({ vendor, products, stock, loadError, onChanged }) {
   );
 }
 
+// Rendición vencida: tiene más de 20 días desde su fecha y todavía no tiene pago ni estado de pago.
+const DIAS_RENDICION_VENCIDA = 20;
+function diasDeRendicion(fechaTexto) {
+  const m = String(fechaTexto || "").match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (!m) return null;
+  const hoy = new Date(fechaHoy() + "T00:00:00");
+  const f = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  return Math.round((hoy - f) / 86400000);
+}
+function rendicionVencida(r) {
+  if (String(r.montoPagado || "").trim() !== "") return null;
+  if (String(r.estadoColor || "").trim() !== "") return null;
+  if (/^\s*(reca|mp)\s*$/i.test(String(r.estado || ""))) return null;
+  const aRendir = String(r.aRendir || "").replace(/[^0-9]/g, "");
+  if (!aRendir || Number(aRendir) === 0) return null;
+  const dias = diasDeRendicion(r.fecha);
+  return dias !== null && dias > DIAS_RENDICION_VENCIDA ? dias : null;
+}
+
 function RendicionesTab({ vendor, rendiciones, error, onChanged }) {
   if (!vendor.sheetUrl) return null;
   if (error) return <div className="ec-error">{error}</div>;
@@ -1949,6 +1981,8 @@ function RendicionesTab({ vendor, rendiciones, error, onChanged }) {
       <span title={TITULO_PAGO[letra]} aria-label={TITULO_PAGO[letra]} style={{ display: "inline-block", width: 18, height: 18, borderRadius: 4, background: COLOR_PAGO[letra], flexShrink: 0 }} />
     );
     if (String(r.montoPagado || "").trim() !== "") return null; // tiene un pago cargado pero todavía sin estado
+    const diasVenc = rendicionVencida(r);
+    if (diasVenc !== null) return <span className="ec-badge" style={{ background: "#FBE3E0", color: TOKENS.danger }}>VENCIDA · {diasVenc} días</span>;
     return <span className="ec-badge ec-badge-pend">PENDIENTE</span>;
   };
 
