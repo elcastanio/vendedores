@@ -2099,7 +2099,8 @@ function VendedoresAdmin({ vendors, refreshVendors }) {
           <tbody>
             {vendors.map((v) => editId === v.id ? (
               <tr key={v.id}>
-                <td><input value={editVals.nombre} onChange={(e) => setEditVals({ ...editVals, nombre: e.target.value })} /></td>
+                <td><input value={editVals.nombre} onChange={(e) => setEditVals({ ...editVals, nombre: e.target.value })} />
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginTop: 6, cursor: "pointer" }}><input type="checkbox" checked={!!editVals.es_regalo} onChange={(e) => setEditVals({ ...editVals, es_regalo: e.target.checked })} /> Regalo por compra</label></td>
                 <td><input value={editVals.usuario} onChange={(e) => setEditVals({ ...editVals, usuario: e.target.value })} /></td>
                 <td><input type="number" style={{ width: 70 }} value={editVals.comisionPct} onChange={(e) => setEditVals({ ...editVals, comisionPct: e.target.value })} /></td>
                 <td><input style={{ width: 160 }} value={editVals.sheetUrl} onChange={(e) => setEditVals({ ...editVals, sheetUrl: e.target.value })} /></td>
@@ -2342,7 +2343,7 @@ function CatalogosAdmin() {
 }
 
 function ProductosAdmin({ products, refreshProducts }) {
-  const [form, setForm] = useState({ nombre: "", precio_minorista: "", precio_mayorista: "", precio_granel: "", precio_comercios: "" });
+  const [form, setForm] = useState({ nombre: "", precio_minorista: "", precio_mayorista: "", precio_granel: "", precio_comercios: "", es_regalo: false });
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
   const [editId, setEditId] = useState(null);
@@ -2354,7 +2355,7 @@ function ProductosAdmin({ products, refreshProducts }) {
     if (e && e.preventDefault) e.preventDefault();
     setError("");
     if (!form.nombre.trim()) return;
-    try { await db.addProduct(form); setForm({ nombre: "", precio_minorista: "", precio_mayorista: "", precio_granel: "", precio_comercios: "" }); refreshProducts(); }
+    try { await db.addProduct(form); setForm({ nombre: "", precio_minorista: "", precio_mayorista: "", precio_granel: "", precio_comercios: "", es_regalo: false }); refreshProducts(); }
     catch (err) { setError("No se pudo guardar: " + err.message); }
   };
   const startEdit = (p) => { setEditId(p.id); setEditVals({ ...p }); };
@@ -2420,6 +2421,10 @@ function ProductosAdmin({ products, refreshProducts }) {
             <div className="ec-field"><label>Precio Granel</label><input type="number" value={form.precio_granel} onChange={(e) => setForm({ ...form, precio_granel: e.target.value })} /></div>
             <div className="ec-field"><label>Precio Comercios</label><input type="number" value={form.precio_comercios} onChange={(e) => setForm({ ...form, precio_comercios: e.target.value })} /></div>
           </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, marginBottom: 12, cursor: "pointer" }}>
+            <input type="checkbox" checked={!!form.es_regalo} onChange={(e) => setForm({ ...form, es_regalo: e.target.checked })} />
+            Regalo por compra (precio $0: se ofrece en todas las categorías)
+          </label>
           <button className="ec-btn ec-btn-primary" type="button" onClick={agregar}><Plus size={15} /> Agregar producto</button>
         </div>
 
@@ -2446,7 +2451,7 @@ function ProductosAdmin({ products, refreshProducts }) {
               </tr>
             ) : (
               <tr key={p.id}>
-                <td>{p.nombre}</td><td>{fmtMoney(p.precio_minorista)}</td><td>{fmtMoney(p.precio_mayorista)}</td><td>{fmtMoney(p.precio_granel)}</td><td>{fmtMoney(p.precio_comercios)}</td>
+                <td>{p.nombre}{p.es_regalo && <span className="ec-badge ec-badge-pend" style={{ marginLeft: 6 }}>REGALO</span>}</td><td>{fmtMoney(p.precio_minorista)}</td><td>{fmtMoney(p.precio_mayorista)}</td><td>{fmtMoney(p.precio_granel)}</td><td>{fmtMoney(p.precio_comercios)}</td>
                 <td className="ec-row-actions">
                   <button className="ec-btn ec-btn-ghost" style={{ padding: "6px 9px" }} onClick={() => startEdit(p)}>Editar</button>
                   <button className="ec-btn ec-btn-ghost" style={{ padding: "6px 9px", color: TOKENS.danger }} onClick={() => eliminar(p.id)}>Borrar</button>
