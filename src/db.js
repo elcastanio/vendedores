@@ -14,8 +14,10 @@ function precioCampoDeCategoria(categoria) {
 }
 
 // Un producto se ofrece en una categoría solo si su precio ahí es mayor a 0.
+// Excepción: los productos marcados como "Regalo por compra" se ofrecen siempre, a $0.
 export function tienePrecio(producto, categoria) {
   if (!producto) return false;
+  if (producto.es_regalo) return true;
   return Number(producto[precioCampoDeCategoria(categoria)] || 0) > 0;
 }
 
@@ -81,6 +83,7 @@ export async function fetchProducts() {
     precio_mayorista: Number(p.precio_mayorista) || 0,
     precio_granel: Number(p.precio_granel) || 0,
     precio_comercios: Number(p.precio_comercios) || 0,
+    es_regalo: p.es_regalo === true,
   }));
 }
 
@@ -93,6 +96,7 @@ export async function addProduct(p) {
     precio_granel: Number(p.precio_granel) || 0,
     precio_comercios: Number(p.precio_comercios) || 0,
   };
+  if (p.es_regalo) row.es_regalo = true; // solo se manda si está marcado (así anda aunque la columna todavía no exista)
   const { error } = await supabase.from("products").insert(row);
   if (error) throw error;
 }
