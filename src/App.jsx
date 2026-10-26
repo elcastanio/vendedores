@@ -2071,7 +2071,11 @@ function VendedoresAdmin({ vendors, refreshVendors }) {
       setEditId(null); refreshVendors();
     } catch (err) { setError("No se pudo guardar el cambio: " + err.message); }
   };
-  const eliminar = async (id) => { try { await db.deleteVendor(id); refreshVendors(); } catch (err) { setError("No se pudo borrar: " + err.message); } };
+  const eliminar = async (id) => {
+    const v = vendors.find((x) => x.id === id);
+    if (!confirm(`¿Borrar al vendedor "${v ? v.nombre : ""}"? Se pierde su ficha y su acceso a la app (la planilla de Google no se borra). Esto no se puede deshacer.`)) return;
+    try { await db.deleteVendor(id); refreshVendors(); } catch (err) { setError("No se pudo borrar: " + err.message); }
+  };
 
   return (
     <>
@@ -2360,7 +2364,11 @@ function ProductosAdmin({ products, refreshProducts }) {
   };
   const startEdit = (p) => { setEditId(p.id); setEditVals({ ...p }); };
   const saveEdit = async () => { try { await db.updateProduct(editId, editVals); setEditId(null); refreshProducts(); } catch (err) { setError(err.message); } };
-  const eliminar = async (id) => { try { await db.deleteProduct(id); refreshProducts(); } catch (err) { setError(err.message); } };
+  const eliminar = async (id) => {
+    const p = products.find((x) => x.id === id);
+    if (!confirm(`¿Borrar el producto "${p ? p.nombre : ""}" del catálogo? Los vendedores dejan de poder cargarlo. Esto no se puede deshacer.`)) return;
+    try { await db.deleteProduct(id); refreshProducts(); } catch (err) { setError(err.message); }
+  };
 
   const manejarArchivo = async (e) => {
     const file = e.target.files[0];
