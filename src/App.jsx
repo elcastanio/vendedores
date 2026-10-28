@@ -2273,22 +2273,48 @@ function CatalogosTab() {
   const [lista, setLista] = useState(null);
   const [error, setError] = useState("");
   const [compartiendo, setCompartiendo] = useState(null);
+  const [aviso, setAviso] = useState("");
+  const archivos = React.useRef({}); // id -> File ya descargado, listo para compartir
 
   useEffect(() => { db.fetchCatalogos().then(setLista).catch((e) => setError(e.message)); }, []);
 
+  // Se van bajando los PDF en segundo plano apenas se abre la pestaña. Así, al tocar Compartir el archivo
+  // ya está en el celular: el navegador solo deja abrir el menú de compartir si el toque es reciente,
+  // y si hay que bajar el PDF recién ahí, a veces el permiso se vence y no se comparte nada.
+  useEffect(() => {
+    if (!lista) return undefined;
+    let vivo = true;
+    (async () => {
+      for (const c of lista) {
+        if (!vivo) return;
+        if (archivos.current[c.id]) continue;
+        try {
+          const resp = await fetch(c.url);
+          if (!resp.ok) continue;
+          const blob = await resp.blob();
+          archivos.current[c.id] = new File([blob], `${c.nombre}.pdf`, { type: "application/pdf" });
+        } catch (e) { /* si falla se comparte el link */ }
+      }
+    })();
+    return () => { vivo = false; };
+  }, [lista]);
+
   const compartir = async (c) => {
+    setAviso("");
     setCompartiendo(c.id);
     try {
-      const resp = await fetch(c.url);
-      const blob = await resp.blob();
-      const archivo = new File([blob], `${c.nombre}.pdf`, { type: "application/pdf" });
-      if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
-        await navigator.share({ files: [archivo] });
+      const archivo = archivos.current[c.id];
+      if (archivo && navigator.canShare && navigator.canShare({ files: [archivo] })) {
+        await navigator.share({ files: [archivo], title: c.nombre });
+      } else if (navigator.share) {
+        // El PDF todavía no terminó de bajar (o este celular no deja compartir archivos): se comparte el link.
+        await navigator.share({ title: c.nombre, text: c.nombre, url: c.url });
       } else {
-        window.open(c.url, "_blank");
+        try { await navigator.clipboard.writeText(c.url); setAviso("Este celular no puede abrir el menú de compartir. Copié el link del catálogo: pegalo en el chat."); }
+        catch (e) { window.open(c.url, "_blank"); }
       }
     } catch (e) {
-      if (!(e && e.name === "AbortError")) alert("No se pudo compartir: " + e.message);
+      if (!(e && e.name === "AbortError")) setAviso("No se pudo compartir: " + (e && e.message ? e.message : "error desconocido") + ". Probá de nuevo o usá Descargar.");
     }
     setCompartiendo(null);
   };
@@ -2298,6 +2324,7 @@ function CatalogosTab() {
       <h3><BookOpen size={16} /> Catálogos</h3>
       <div className="ec-sub" style={{ marginBottom: 12 }}>Descargalos o compartilos directo con tus clientes.</div>
       {error && <div className="ec-error">{error}</div>}
+      {aviso && <div className="ec-error" style={{ marginBottom: 10 }}>{aviso}</div>}
       {lista === null && !error ? <Spinner label="Cargando..." /> : lista && lista.length === 0 ? (
         <div className="ec-empty">Todavía no hay catálogos cargados.</div>
       ) : (lista || []).map((c) => (
