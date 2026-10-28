@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import * as XLSX from "xlsx";
 import {
   ClipboardList, Target, Package, Wallet, LogOut, Plus, Check, X, Loader2,
@@ -2272,25 +2272,47 @@ function parseCatalogWorkbook(wb) {
 function CatalogosTab() {
   const [lista, setLista] = useState(null);
   const [error, setError] = useState("");
-  const [compartiendo, setCompartiendo] = useState(null);
+  const [listos, setListos] = useState({}); // id -> true cuando el PDF ya está bajado
+  const archivos = useRef({}); // id -> File listo para compartir
 
   useEffect(() => { db.fetchCatalogos().then(setLista).catch((e) => setError(e.message)); }, []);
 
-  const compartir = async (c) => {
-    setCompartiendo(c.id);
-    try {
-      const resp = await fetch(c.url);
-      const blob = await resp.blob();
-      const archivo = new File([blob], `${c.nombre}.pdf`, { type: "application/pdf" });
-      if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
-        await navigator.share({ files: [archivo] });
-      } else {
-        window.open(c.url, "_blank");
+  // Baja los PDF en segundo plano apenas se abre la pestaña, así al tocar
+  // "Compartir" el archivo ya está en memoria (igual que el ticket del cliente).
+  useEffect(() => {
+    if (!lista) return;
+    let cancelado = false;
+    lista.forEach(async (c) => {
+      if (archivos.current[c.id]) return;
+      try {
+        const resp = await fetch(c.url);
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        const blob = await resp.blob();
+        if (cancelado) return;
+        archivos.current[c.id] = new File([blob], `${c.nombre}.pdf`, { type: "application/pdf" });
+        setListos((p) => ({ ...p, [c.id]: true }));
+      } catch (e) {
+        if (!cancelado) setListos((p) => ({ ...p, [c.id]: "error" }));
       }
-    } catch (e) {
-      if (!(e && e.name === "AbortError")) alert("No se pudo compartir: " + e.message);
+    });
+    return () => { cancelado = true; };
+  }, [lista]);
+
+  // Sin ningún "await" antes de navigator.share: el celu lo permite solo si
+  // sale directo del toque del vendedor.
+  const compartir = (c) => {
+    const archivo = archivos.current[c.id];
+    if (!archivo) {
+      if (listos[c.id] === "error") window.open(c.url, "_blank");
+      return;
     }
-    setCompartiendo(null);
+    if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+      navigator.share({ files: [archivo] }).catch((e) => {
+        if (!(e && e.name === "AbortError")) alert("No se pudo compartir: " + e.message);
+      });
+    } else {
+      window.open(c.url, "_blank");
+    }
   };
 
   return (
@@ -2305,8 +2327,8 @@ function CatalogosTab() {
           <div className="ec-pedido-cliente" style={{ marginBottom: 8 }}>{c.nombre}</div>
           <div style={{ display: "flex", gap: 8 }}>
             <a className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "6px 10px", justifyContent: "center", textDecoration: "none" }} href={c.url} download={`${c.nombre}.pdf`} target="_blank" rel="noopener noreferrer"><FileDown size={14} /> Descargar</a>
-            <button type="button" className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "6px 10px", justifyContent: "center" }} disabled={compartiendo === c.id} onClick={() => compartir(c)}>
-              {compartiendo === c.id ? <Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> : <ExternalLink size={14} />} Compartir
+            <button type="button" className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "6px 10px", justifyContent: "center" }} disabled={!listos[c.id]} onClick={() => compartir(c)}>
+              {!listos[c.id] ? <Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> : <ExternalLink size={14} />} {!listos[c.id] ? "Preparando..." : "Compartir"}
             </button>
           </div>
         </div>
