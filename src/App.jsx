@@ -2289,7 +2289,8 @@ function CatalogosTab() {
         if (!resp.ok) throw new Error("HTTP " + resp.status);
         const blob = await resp.blob();
         if (cancelado) return;
-        archivos.current[c.id] = new File([blob], `${c.nombre}.pdf`, { type: "application/pdf" });
+        const nombreSeguro = String(c.nombre).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9 _-]+/g, "").replace(/\s+/g, " ").trim() || "Catalogo";
+        archivos.current[c.id] = new File([blob], `${nombreSeguro}.pdf`, { type: "application/pdf" });
         setListos((p) => ({ ...p, [c.id]: true }));
       } catch (e) {
         if (!cancelado) setListos((p) => ({ ...p, [c.id]: "error" }));
