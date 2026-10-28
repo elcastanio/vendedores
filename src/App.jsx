@@ -2269,57 +2269,26 @@ function parseCatalogWorkbook(wb) {
 
 // ---------- CATÁLOGOS ----------
 
-// Sirve para comprobar que el celular tenga la última versión de la app (se muestra al pie de Catálogos).
-const VERSION_APP = "2026-10-28 c";
-
 function CatalogosTab() {
   const [lista, setLista] = useState(null);
   const [error, setError] = useState("");
   const [compartiendo, setCompartiendo] = useState(null);
-  const [aviso, setAviso] = useState("");
-  const [estados, setEstados] = useState({}); // id -> "preparando" | "listo" | mensaje de error
-  const archivos = React.useRef({}); // id -> File ya descargado, listo para compartir
 
   useEffect(() => { db.fetchCatalogos().then(setLista).catch((e) => setError(e.message)); }, []);
 
-  // Se van bajando los PDF en segundo plano apenas se abre la pestaña. El botón Compartir se habilita
-  // cuando el archivo ya está en el celular: el navegador solo deja abrir el menú de compartir si el toque
-  // es reciente, así que el PDF tiene que estar bajado antes de tocar.
-  useEffect(() => {
-    if (!lista) return undefined;
-    let vivo = true;
-    setEstados(Object.fromEntries(lista.map((c) => [c.id, archivos.current[c.id] ? "listo" : "preparando"])));
-    (async () => {
-      for (const c of lista) {
-        if (!vivo) return;
-        if (archivos.current[c.id]) continue;
-        try {
-          const resp = await fetch(c.url);
-          if (!resp.ok) throw new Error("el servidor respondió " + resp.status);
-          const blob = await resp.blob();
-          archivos.current[c.id] = new File([blob], `${c.nombre}.pdf`, { type: "application/pdf" });
-          if (vivo) setEstados((s) => ({ ...s, [c.id]: "listo" }));
-        } catch (e) {
-          if (vivo) setEstados((s) => ({ ...s, [c.id]: "No se pudo preparar el PDF (" + (e && e.message ? e.message : "error") + ")." }));
-        }
-      }
-    })();
-    return () => { vivo = false; };
-  }, [lista]);
-
   const compartir = async (c) => {
-    setAviso("");
-    const archivo = archivos.current[c.id];
-    if (!archivo) { setAviso("El PDF todavía se está preparando. Esperá unos segundos y probá de nuevo."); return; }
     setCompartiendo(c.id);
     try {
+      const resp = await fetch(c.url);
+      const blob = await resp.blob();
+      const archivo = new File([blob], `${c.nombre}.pdf`, { type: "application/pdf" });
       if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
-        await navigator.share({ files: [archivo], title: c.nombre });
+        await navigator.share({ files: [archivo] });
       } else {
-        setAviso("Este celular no deja compartir archivos desde la app. Usá Descargar y adjuntalo desde WhatsApp, o el botón WhatsApp para mandar el link.");
+        window.open(c.url, "_blank");
       }
     } catch (e) {
-      if (!(e && e.name === "AbortError")) setAviso("No se pudo compartir: " + (e && e.message ? e.message : "error desconocido") + ". Probá de nuevo o usá Descargar.");
+      if (!(e && e.name === "AbortError")) alert("No se pudo compartir: " + e.message);
     }
     setCompartiendo(null);
   };
@@ -2329,7 +2298,6 @@ function CatalogosTab() {
       <h3><BookOpen size={16} /> Catálogos</h3>
       <div className="ec-sub" style={{ marginBottom: 12 }}>Descargalos o compartilos directo con tus clientes.</div>
       {error && <div className="ec-error">{error}</div>}
-      {aviso && <div className="ec-error" style={{ marginBottom: 10 }}>{aviso}</div>}
       {lista === null && !error ? <Spinner label="Cargando..." /> : lista && lista.length === 0 ? (
         <div className="ec-empty">Todavía no hay catálogos cargados.</div>
       ) : (lista || []).map((c) => (
@@ -2337,15 +2305,12 @@ function CatalogosTab() {
           <div className="ec-pedido-cliente" style={{ marginBottom: 8 }}>{c.nombre}</div>
           <div style={{ display: "flex", gap: 8 }}>
             <a className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "6px 10px", justifyContent: "center", textDecoration: "none" }} href={c.url} download={`${c.nombre}.pdf`} target="_blank" rel="noopener noreferrer"><FileDown size={14} /> Descargar</a>
-            <button type="button" className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "6px 10px", justifyContent: "center", opacity: estados[c.id] === "listo" ? 1 : 0.55 }} disabled={compartiendo === c.id || estados[c.id] !== "listo"} onClick={() => compartir(c)}>
-              {compartiendo === c.id || estados[c.id] === "preparando" ? <Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> : <ExternalLink size={14} />} {estados[c.id] === "preparando" ? "Preparando..." : "Compartir"}
+            <button type="button" className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "6px 10px", justifyContent: "center" }} disabled={compartiendo === c.id} onClick={() => compartir(c)}>
+              {compartiendo === c.id ? <Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> : <ExternalLink size={14} />} Compartir
             </button>
-            <a className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "6px 10px", justifyContent: "center", textDecoration: "none" }} href={`https://wa.me/?text=${encodeURIComponent(`${c.nombre}: ${c.url}`)}`} target="_blank" rel="noopener noreferrer">Enviar link</a>
           </div>
-          {estados[c.id] && estados[c.id] !== "listo" && estados[c.id] !== "preparando" && <div className="ec-error" style={{ marginTop: 6 }}>{estados[c.id]}</div>}
         </div>
       ))}
-      <div className="ec-sub" style={{ marginTop: 10, fontSize: 11 }}>Versión de la app: {VERSION_APP}</div>
     </div>
   );
 }
