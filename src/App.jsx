@@ -2269,6 +2269,9 @@ function parseCatalogWorkbook(wb) {
 
 // ---------- CATÁLOGOS ----------
 
+// Sirve para comprobar que el celular tenga la última versión de la app (se muestra al pie de Catálogos).
+const VERSION_APP = "2026-10-28 b";
+
 function CatalogosTab() {
   const [lista, setLista] = useState(null);
   const [error, setError] = useState("");
@@ -2335,9 +2338,11 @@ function CatalogosTab() {
             <button type="button" className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "6px 10px", justifyContent: "center" }} disabled={compartiendo === c.id} onClick={() => compartir(c)}>
               {compartiendo === c.id ? <Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> : <ExternalLink size={14} />} Compartir
             </button>
+            <a className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "6px 10px", justifyContent: "center", textDecoration: "none" }} href={`https://wa.me/?text=${encodeURIComponent(`${c.nombre}: ${c.url}`)}`} target="_blank" rel="noopener noreferrer">WhatsApp</a>
           </div>
         </div>
       ))}
+      <div className="ec-sub" style={{ marginTop: 10, fontSize: 11 }}>Versión de la app: {VERSION_APP}</div>
     </div>
   );
 }
