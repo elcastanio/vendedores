@@ -2287,8 +2287,11 @@ function CatalogosTab() {
       try {
         const resp = await fetch(c.url);
         if (!resp.ok) throw new Error("HTTP " + resp.status);
-        const blob = await resp.blob();
+        // Se copia a memoria (ArrayBuffer): en iPhone un archivo "colgado" de la descarga
+        // a veces no llega a WhatsApp, uno en memoria sí (como el ticket).
+        const datos = await resp.arrayBuffer();
         if (cancelado) return;
+        const blob = new Blob([datos], { type: "application/pdf" });
         const nombreSeguro = String(c.nombre).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9 _-]+/g, "").replace(/\s+/g, " ").trim() || "Catalogo";
         archivos.current[c.id] = new File([blob], `${nombreSeguro}.pdf`, { type: "application/pdf" });
         setListos((p) => ({ ...p, [c.id]: true }));
