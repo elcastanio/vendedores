@@ -1561,63 +1561,135 @@ function ObjetivoContenido({ vendor, pedidos, loadError, mesRealNombre, mesRealC
 
 // ---------- TÉRMINOS Y CONDICIONES (firma en pantalla) ----------
 
-// Recuadro para firmar con el dedo o el mouse. Avisa con onChange(dataUrl | null).
-function FirmaPad({ onChange }) {
+// Pantalla completa para firmar con el dedo o el mouse. Se abre desde FirmaPad, así el teclado
+// ya está cerrado y la pantalla no se mueve mientras se firma. Devuelve la firma con onListo(dataUrl).
+function FirmaModal({ onListo, onCancelar }) {
   const canvasRef = React.useRef(null);
-  const dibujando = React.useRef(false);
-  const hayTrazo = React.useRef(false);
+  const trazos = React.useRef([]);        // lista de trazos; cada uno es una lista de puntos {x, y} en px de pantalla
+  const actual = React.useRef(null);      // trazo que se está dibujando
+  const [hayTrazo, setHayTrazo] = useState(false);
 
   useEffect(() => {
     const c = canvasRef.current;
-    if (!c) return;
-    const ratio = window.devicePixelRatio || 1;
-    const w = c.clientWidth, h = c.clientHeight;
-    c.width = w * ratio; c.height = h * ratio;
-    const ctx = c.getContext("2d");
-    ctx.scale(ratio, ratio);
-    ctx.lineWidth = 2.2; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#14253A";
+    if (!c) return undefined;
+
+    const estilo = (ctx) => { ctx.lineWidth = 2.6; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = "#14253A"; ctx.fillStyle = "#14253A"; };
+    const dibujarTodo = () => {
+      const ctx = c.getContext("2d");
+      ctx.clearRect(0, 0, c.clientWidth, c.clientHeight);
+      estilo(ctx);
+      trazos.current.forEach((t) => {
+        if (t.length === 1) { ctx.beginPath(); ctx.arc(t[0].x, t[0].y, 1.4, 0, Math.PI * 2); ctx.fill(); return; }
+        ctx.beginPath(); ctx.moveTo(t[0].x, t[0].y);
+        for (let i = 1; i < t.length; i++) ctx.lineTo(t[i].x, t[i].y);
+        ctx.stroke();
+      });
+    };
+    // Ajusta la resolución del lienzo a su tamaño real (también si gira el celular) sin perder lo dibujado.
+    const ajustar = () => {
+      const w = c.clientWidth, h = c.clientHeight;
+      if (!w || !h) return;
+      const ratio = window.devicePixelRatio || 1;
+      const nw = Math.round(w * ratio), nh = Math.round(h * ratio);
+      if (c.width === nw && c.height === nh) return;
+      c.width = nw; c.height = nh;
+      c.getContext("2d").setTransform(ratio, 0, 0, ratio, 0, 0);
+      dibujarTodo();
+    };
+    ajustar();
+
+    const punto = (e) => {
+      const r = c.getBoundingClientRect();
+      const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+      return { x: t.clientX - r.left, y: t.clientY - r.top };
+    };
+    const empezar = (e) => {
+      if (e.cancelable) e.preventDefault();
+      if (e.pointerId !== undefined && c.setPointerCapture) { try { c.setPointerCapture(e.pointerId); } catch (err) {} }
+      actual.current = [punto(e)];
+      trazos.current.push(actual.current);
+      dibujarTodo();
+      setHayTrazo(true);
+    };
+    const mover = (e) => {
+      if (!actual.current) return;
+      if (e.cancelable) e.preventDefault();
+      actual.current.push(punto(e));
+      dibujarTodo();
+    };
+    const terminar = (e) => {
+      if (!actual.current) return;
+      if (e && e.cancelable) e.preventDefault();
+      actual.current = null;
+    };
+
+    const opt = { passive: false };
+    const eventos = window.PointerEvent
+      ? [["pointerdown", empezar], ["pointermove", mover], ["pointerup", terminar], ["pointercancel", terminar]]
+      : [["touchstart", empezar], ["touchmove", mover], ["touchend", terminar], ["touchcancel", terminar],
+         ["mousedown", empezar], ["mousemove", mover], ["mouseup", terminar]];
+    eventos.forEach(([n, f]) => c.addEventListener(n, f, opt));
+
+    window.addEventListener("resize", ajustar);
+    window.addEventListener("orientationchange", ajustar);
+    const obs = window.ResizeObserver ? new ResizeObserver(ajustar) : null;
+    if (obs) obs.observe(c);
+
+    // Mientras se firma, la pantalla de atrás no se mueve.
+    const overflowAntes = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    c.__borrar = () => { trazos.current = []; actual.current = null; dibujarTodo(); setHayTrazo(false); };
+    return () => {
+      eventos.forEach(([n, f]) => c.removeEventListener(n, f, opt));
+      window.removeEventListener("resize", ajustar);
+      window.removeEventListener("orientationchange", ajustar);
+      if (obs) obs.disconnect();
+      document.body.style.overflow = overflowAntes;
+    };
   }, []);
 
-  const punto = (e) => {
-    const r = canvasRef.current.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
-  };
-  const empezar = (e) => {
-    e.preventDefault();
-    canvasRef.current.setPointerCapture(e.pointerId);
-    dibujando.current = true;
-    const ctx = canvasRef.current.getContext("2d");
-    const p = punto(e);
-    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + 0.01, p.y + 0.01); ctx.stroke();
-  };
-  const mover = (e) => {
-    if (!dibujando.current) return;
-    e.preventDefault();
-    const ctx = canvasRef.current.getContext("2d");
-    const p = punto(e);
-    ctx.lineTo(p.x, p.y); ctx.stroke();
-    hayTrazo.current = true;
-  };
-  const terminar = () => {
-    if (!dibujando.current) return;
-    dibujando.current = false;
-    if (hayTrazo.current) onChange(canvasRef.current.toDataURL("image/png"));
-  };
-  const borrar = () => {
-    const c = canvasRef.current;
-    c.getContext("2d").clearRect(0, 0, c.width, c.height);
-    hayTrazo.current = false;
-    onChange(null);
-  };
+  const listo = () => { if (hayTrazo) onListo(canvasRef.current.toDataURL("image/png")); };
 
   return (
+    <div role="dialog" aria-modal="true" aria-label="Firma" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 2000, background: "#fff", display: "flex", flexDirection: "column", touchAction: "none", userSelect: "none", WebkitUserSelect: "none" }}>
+      <div style={{ padding: "16px 16px 8px", fontSize: 15, fontWeight: 600, color: TOKENS.text }}>Firmá con el dedo en el recuadro</div>
+      <div style={{ flex: 1, minHeight: 0, padding: "0 16px" }}>
+        <canvas
+          ref={canvasRef}
+          style={{ width: "100%", height: "100%", border: `1.5px dashed ${TOKENS.textSoft}`, borderRadius: 10, background: "#fff", touchAction: "none", display: "block" }}
+        />
+      </div>
+      <div style={{ display: "flex", gap: 8, padding: 16, flexWrap: "wrap" }}>
+        <button type="button" className="ec-btn ec-btn-primary" disabled={!hayTrazo} onClick={listo} style={{ opacity: hayTrazo ? 1 : 0.5 }}><Check size={15} /> Listo</button>
+        <button type="button" className="ec-btn ec-btn-ghost" onClick={() => { if (canvasRef.current && canvasRef.current.__borrar) canvasRef.current.__borrar(); }}>Borrar</button>
+        <button type="button" className="ec-btn ec-btn-ghost" onClick={onCancelar}>Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
+// Campo de firma dentro del formulario: botón que abre la pantalla de firma y vista previa de lo firmado.
+// Avisa con onChange(dataUrl | null).
+function FirmaPad({ onChange }) {
+  const [abierta, setAbierta] = useState(false);
+  const [img, setImg] = useState(null);
+  return (
     <div>
-      <canvas
-        ref={canvasRef}
-        onPointerDown={empezar} onPointerMove={mover} onPointerUp={terminar} onPointerCancel={terminar} onPointerLeave={terminar}
-        style={{ width: "100%", height: 160, border: `1.5px dashed ${TOKENS.textSoft}`, borderRadius: 8, background: "#fff", touchAction: "none", display: "block" }}
-      />
-      <button type="button" className="ec-btn ec-btn-ghost" onClick={borrar} style={{ marginTop: 6 }}>Borrar firma</button>
+      {img ? (
+        <div style={{ border: `1.5px solid ${TOKENS.border}`, borderRadius: 8, background: "#fff", padding: 8 }}>
+          <img src={img} alt="Tu firma" style={{ width: "100%", maxHeight: 140, objectFit: "contain", display: "block" }} />
+        </div>
+      ) : (
+        <button type="button" onClick={() => setAbierta(true)} style={{ width: "100%", height: 120, border: `1.5px dashed ${TOKENS.textSoft}`, borderRadius: 8, background: "#fff", color: TOKENS.textSoft, fontSize: 14, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          <Pencil size={16} /> Tocá acá para firmar
+        </button>
+      )}
+      <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+        {img && <button type="button" className="ec-btn ec-btn-ghost" onClick={() => setAbierta(true)}>Firmar de nuevo</button>}
+        {img && <button type="button" className="ec-btn ec-btn-ghost" onClick={() => { setImg(null); onChange(null); }}>Borrar firma</button>}
+      </div>
+      {abierta && <FirmaModal onCancelar={() => setAbierta(false)} onListo={(d) => { setImg(d); onChange(d); setAbierta(false); }} />}
     </div>
   );
 }
@@ -1661,7 +1733,7 @@ function TerminosCard({ vendor }) {
     if (!nombre.trim()) { setError("Completá tu nombre y apellido."); return; }
     if (dniLimpio.length < 7 || dniLimpio.length > 9) { setError("Ingresá un DNI válido (solo números)."); return; }
     if (!acepto) { setError("Tenés que tildar que leíste y aceptás los términos."); return; }
-    if (!firma) { setError("Firmá en el recuadro con el dedo."); return; }
+    if (!firma) { setError("Tocá el recuadro de firma y firmá con el dedo."); return; }
     setGuardando(true);
     try {
       const f = await db.guardarTerminos({ vendorId: vendor.id, version: TERMINOS_VERSION, nombre: nombre.trim(), dni: dniLimpio, firma });
@@ -1705,7 +1777,7 @@ function TerminosCard({ vendor }) {
                 <input type="checkbox" checked={acepto} onChange={(e) => setAcepto(e.target.checked)} />
                 Leí y acepto los términos y condiciones
               </label>
-              <div className="ec-sub" style={{ marginBottom: 6 }}>Firmá acá con el dedo:</div>
+              <div className="ec-sub" style={{ marginBottom: 6 }}>Firma:</div>
               <FirmaPad onChange={setFirma} />
               {error && <div className="ec-error" style={{ marginTop: 10 }}>{error}</div>}
             </>
