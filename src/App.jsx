@@ -904,11 +904,27 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
   const guardarPedido = async () => {
     setError("");
     if (!cliente.trim()) { setError("Completá el nombre del cliente."); return; }
-    if (carrito.length === 0) { setError("Agregá al menos un producto al pedido."); return; }
+    // Si hay un producto elegido con unidades que todavía no se sumó al pedido, entra solo:
+    // así con un único producto alcanza con "Guardar pedido".
+    const lineas = [...carrito];
+    if (productoSel && Number(unidades) > 0) {
+      lineas.push({
+        id: `${productoSel.id}-${Date.now()}`,
+        productoNombre: productoSel.nombre,
+        unidades: Number(unidades),
+        precio,
+        total: totalLinea,
+        enStock: loTengoEnStock,
+      });
+    } else if (productoSel && !(Number(unidades) > 0)) {
+      setError("Poné las unidades del producto elegido (mayor a 0).");
+      return;
+    }
+    if (lineas.length === 0) { setError("Elegí un producto y unidades para guardar el pedido."); return; }
     setGuardando(true);
     try {
       const sinStock = [];
-      for (const linea of carrito) {
+      for (const linea of lineas) {
         const r = await sheets.addPedidoSheet(vendor.sheetUrl, {
           fecha, categoria, cliente: cliente.trim(), producto: linea.productoNombre, unidades: linea.unidades, precio: linea.precio, enStock: linea.enStock,
         });
@@ -917,6 +933,9 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
       if (sinStock.length) alert("Pedido guardado. Ojo: no encontré en tu solapa Stock (\"A la venta\") estos productos, revisalos a mano: " + sinStock.join(", "));
       setCliente("");
       setCarrito([]);
+      setProductoId("");
+      setUnidades("");
+      setLoTengoEnStock(false);
       // Si el pedido se cargó en el mismo mes que se está viendo abajo, lo refrescamos.
       if (mesActual === mesVista) refrescar();
     } catch (err) {
