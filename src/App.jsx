@@ -459,7 +459,8 @@ function FechaField({ label, value, onChange }) {
           type="date"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, border: "none", padding: 0, margin: 0 }}
+          onClick={(e) => { try { e.currentTarget.showPicker && e.currentTarget.showPicker(); } catch (_) {} }}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, border: "none", padding: 0, margin: 0, cursor: "pointer" }}
         />
       </div>
     </div>
@@ -481,7 +482,8 @@ function MesField({ label, value, onChange }) {
           type="month"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, border: "none", padding: 0, margin: 0 }}
+          onClick={(e) => { try { e.currentTarget.showPicker && e.currentTarget.showPicker(); } catch (_) {} }}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, border: "none", padding: 0, margin: 0, cursor: "pointer" }}
         />
       </div>
     </div>
