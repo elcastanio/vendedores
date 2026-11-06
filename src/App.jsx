@@ -2293,57 +2293,12 @@ function parseCatalogWorkbook(wb) {
 function CatalogosTab() {
   const [lista, setLista] = useState(null);
   const [error, setError] = useState("");
-  const [listos, setListos] = useState({}); // id -> true cuando el PDF ya está bajado
-  const archivos = useRef({}); // id -> File listo para compartir
-
   useEffect(() => { db.fetchCatalogos().then(setLista).catch((e) => setError(e.message)); }, []);
-
-  // Baja los PDF en segundo plano apenas se abre la pestaña, así al tocar
-  // "Compartir" el archivo ya está en memoria (igual que el ticket del cliente).
-  useEffect(() => {
-    if (!lista) return;
-    let cancelado = false;
-    lista.forEach(async (c) => {
-      if (archivos.current[c.id]) return;
-      try {
-        const resp = await fetch(c.url);
-        if (!resp.ok) throw new Error("HTTP " + resp.status);
-        // Se copia a memoria (ArrayBuffer): en iPhone un archivo "colgado" de la descarga
-        // a veces no llega a WhatsApp, uno en memoria sí (como el ticket).
-        const datos = await resp.arrayBuffer();
-        if (cancelado) return;
-        const blob = new Blob([datos], { type: "application/pdf" });
-        const nombreSeguro = String(c.nombre).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9 _-]+/g, "").replace(/\s+/g, " ").trim() || "Catalogo";
-        archivos.current[c.id] = new File([blob], `${nombreSeguro}.pdf`, { type: "application/pdf" });
-        setListos((p) => ({ ...p, [c.id]: true }));
-      } catch (e) {
-        if (!cancelado) setListos((p) => ({ ...p, [c.id]: "error" }));
-      }
-    });
-    return () => { cancelado = true; };
-  }, [lista]);
-
-  // Sin ningún "await" antes de navigator.share: el celu lo permite solo si
-  // sale directo del toque del vendedor.
-  const compartir = (c) => {
-    const archivo = archivos.current[c.id];
-    if (!archivo) {
-      if (listos[c.id] === "error") window.open(c.url, "_blank");
-      return;
-    }
-    if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
-      navigator.share({ files: [archivo] }).catch((e) => {
-        if (!(e && e.name === "AbortError")) alert("No se pudo compartir: " + e.message);
-      });
-    } else {
-      window.open(c.url, "_blank");
-    }
-  };
 
   return (
     <div className="ec-card">
       <h3><BookOpen size={16} /> Catálogos</h3>
-      <div className="ec-sub" style={{ marginBottom: 12 }}>Descargalos o compartilos directo con tus clientes.</div>
+      <div className="ec-sub" style={{ marginBottom: 12 }}>Descargalos desde acá.</div>
       {error && <div className="ec-error">{error}</div>}
       {lista === null && !error ? <Spinner label="Cargando..." /> : lista && lista.length === 0 ? (
         <div className="ec-empty">Todavía no hay catálogos cargados.</div>
@@ -2352,9 +2307,6 @@ function CatalogosTab() {
           <div className="ec-pedido-cliente" style={{ marginBottom: 8 }}>{c.nombre}</div>
           <div style={{ display: "flex", gap: 8 }}>
             <a className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "6px 10px", justifyContent: "center", textDecoration: "none" }} href={c.url} download={`${c.nombre}.pdf`} target="_blank" rel="noopener noreferrer"><FileDown size={14} /> Descargar</a>
-            <button type="button" className="ec-btn ec-btn-ghost" style={{ flex: 1, padding: "6px 10px", justifyContent: "center" }} disabled={!listos[c.id]} onClick={() => compartir(c)}>
-              {!listos[c.id] ? <Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> : <ExternalLink size={14} />} {!listos[c.id] ? "Preparando..." : "Compartir"}
-            </button>
           </div>
         </div>
       ))}
