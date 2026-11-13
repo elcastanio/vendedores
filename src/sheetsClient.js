@@ -138,3 +138,8 @@ export async function agregarLineaPedidoSheet(sheetUrl, mes, { filaRef, cliente,
   const sheetId = extraerSheetId(sheetUrl);
   return llamar("agregarLineaPedido", { sheetId, mes, filaRef, cliente, productoRef, producto, unidades, precio, enStock: !!enStock });
 }
+
+// Manda el comprobante de pago de una rendición por mail (el archivo no se guarda en ningún lado).
+export async function enviarComprobanteSheet({ vendedor, fechaRendicion, nombreArchivo, mime, base64 }) {
+  return llamar("enviarComprobante", { vendedor, fechaRendicion, nombreArchivo, mime, base64 });
+}
