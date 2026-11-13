@@ -2139,7 +2139,11 @@ function RendicionesTab({ vendor, rendiciones, error, onChanged }) {
       {rendiciones.length === 0 ? (
         <div className="ec-empty">Todavía no hay rendiciones cargadas.</div>
       ) : (
-        rendiciones.map((r, i) => (
+        // Las más nuevas arriba y las más viejas abajo (por la fecha de la rendición).
+        rendiciones.map((r, i) => {
+          const m = String(r.fecha || "").match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+          return { r, orden: m ? Number(m[3]) * 10000 + Number(m[2]) * 100 + Number(m[1]) : 0, i };
+        }).sort((x, y) => y.orden - x.orden || y.i - x.i).map(({ r, i }) => (
           <div className="ec-pedido-row" key={i}>
             <div className="ec-pedido-top">
               <div><div className="ec-pedido-cliente">{r.fecha}</div><div className="ec-pedido-meta">Vendido {r.totalVendido} · Comisión {r.comision}</div></div>
