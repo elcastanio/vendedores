@@ -2082,10 +2082,10 @@ function leerArchivoComprobante(file) {
   });
 }
 
-function BotonComprobante({ vendor, rendicion }) {
-  const [estado, setEstado] = useState("idle"); // idle | leyendo | listo | enviando | enviado
+function BotonComprobante({ vendor, rendicion, enviadoEl, onEnviado }) {
+  const [estado, setEstado] = useState("idle"); // idle | leyendo | listo | enviando
   const [err, setErr] = useState("");
-  const [adjunto, setAdjunto] = useState(null); // { base64, mime, nombre, esPdf }
+  const [adjunto, setAdjunto] = useState(null); // { base64, mime, nombre, nombreOriginal }
   const inputRef = useRef(null);
   const elegir = async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -2095,7 +2095,7 @@ function BotonComprobante({ vendor, rendicion }) {
     try {
       const esPdf = file.type === "application/pdf";
       const base64 = await leerArchivoComprobante(file);
-      setAdjunto({ base64, esPdf, mime: esPdf ? "application/pdf" : "image/jpeg", nombre: esPdf ? (file.name || "comprobante.pdf") : "comprobante.jpg" });
+      setAdjunto({ base64, mime: esPdf ? "application/pdf" : "image/jpeg", nombre: esPdf ? (file.name || "comprobante.pdf") : "comprobante.jpg", nombreOriginal: file.name || (esPdf ? "comprobante.pdf" : "comprobante.jpg") });
       setEstado("listo");
     } catch (ex) { setErr(ex.message || "No se pudo leer el archivo."); setEstado("idle"); }
   };
@@ -2104,21 +2104,21 @@ function BotonComprobante({ vendor, rendicion }) {
     if (!adjunto) return;
     setErr(""); setEstado("enviando");
     try {
-      await sheets.enviarComprobanteSheet({ vendedor: vendor.nombre, fechaRendicion: rendicion.fecha, nombreArchivo: adjunto.nombre, mime: adjunto.mime, base64: adjunto.base64 });
-      setAdjunto(null); setEstado("enviado");
+      const r = await sheets.enviarComprobanteSheet({ vendedor: vendor.nombre, fechaRendicion: rendicion.fecha, nombreArchivo: adjunto.nombre, mime: adjunto.mime, base64: adjunto.base64 });
+      setAdjunto(null); setEstado("idle");
+      onEnviado && onEnviado(rendicion.fecha, (r && r.enviadoEl) || "hoy");
     } catch (ex) { setErr(ex.message || "No se pudo enviar."); setEstado("listo"); }
   };
-  if (estado === "enviado") return <div className="ec-note"><Check size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Comprobante enviado. Lo recibimos por mail.</div>;
+  if (enviadoEl) return <div className="ec-note"><Check size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Comprobante enviado el {enviadoEl}. Lo recibimos por mail.</div>;
   const input = <input ref={inputRef} type="file" accept="image/*,application/pdf" style={{ display: "none" }} onChange={elegir} />;
   if (adjunto && (estado === "listo" || estado === "enviando")) {
     const ocupado = estado === "enviando";
     return (
       <div style={{ marginTop: 8 }}>
         {input}
-        <div style={{ fontSize: 12.5, fontWeight: 600, color: TOKENS.textSoft, marginBottom: 6 }}>Revisá el comprobante antes de enviarlo</div>
-        {adjunto.esPdf
-          ? <div className="ec-note" style={{ marginTop: 0 }}><FileDown size={13} style={{ marginRight: 5, verticalAlign: -2 }} />{adjunto.nombre}</div>
-          : <img src={"data:" + adjunto.mime + ";base64," + adjunto.base64} alt="Comprobante" style={{ width: "100%", maxHeight: 320, objectFit: "contain", borderRadius: 8, border: "1px solid " + TOKENS.border, background: "#fff" }} />}
+        <div className="ec-note" style={{ marginTop: 0, display: "flex", alignItems: "center", gap: 6, wordBreak: "break-all" }}>
+          <FileDown size={14} style={{ flexShrink: 0 }} /><span>{adjunto.nombreOriginal}</span>
+        </div>
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
           <button className="ec-btn ec-btn-ghost" disabled={ocupado} onClick={cancelar} style={{ flex: 1, justifyContent: "center" }}>Cambiar archivo</button>
           <button className="ec-btn ec-btn-primary" disabled={ocupado} onClick={enviar} style={{ flex: 1, justifyContent: "center" }}>
@@ -2141,6 +2141,13 @@ function BotonComprobante({ vendor, rendicion }) {
 }
 
 function RendicionesTab({ vendor, rendiciones, error, onChanged }) {
+  // Comprobantes ya enviados (para no dejar adjuntar dos veces el de la misma rendición).
+  const [comprobantes, setComprobantes] = useState({});
+  useEffect(() => {
+    let vivo = true;
+    sheets.fetchComprobantesSheet({ vendedor: vendor.nombre }).then((m) => { if (vivo) setComprobantes(m); }).catch(() => {});
+    return () => { vivo = false; };
+  }, [vendor.nombre, rendiciones]);
   if (!vendor.sheetUrl) return null;
   if (error) return <div className="ec-error">{error}</div>;
   if (rendiciones === null) return <Spinner label="Cargando rendiciones..." />;
@@ -2184,7 +2191,7 @@ function RendicionesTab({ vendor, rendiciones, error, onChanged }) {
             <div className="ec-subtotal"><span>A rendir</span><span>{r.aRendir}</span></div>
             {r.montoPagado && <div className="ec-note">Pagado: {r.montoPagado} {r.fechaPago ? `el ${r.fechaPago}` : ""}</div>}
             {r.observaciones && <div className="ec-note">{r.observaciones}</div>}
-            {String(r.montoPagado || "").trim() === "" && <BotonComprobante vendor={vendor} rendicion={r} />}
+            {String(r.montoPagado || "").trim() === "" && <BotonComprobante vendor={vendor} rendicion={r} enviadoEl={comprobantes[r.fecha]} onEnviado={(f, d) => setComprobantes((c) => ({ ...c, [f]: d }))} />}
           </div>
         ))
       )}
