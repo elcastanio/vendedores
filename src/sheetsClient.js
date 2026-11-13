@@ -143,3 +143,9 @@ export async function agregarLineaPedidoSheet(sheetUrl, mes, { filaRef, cliente,
 export async function enviarComprobanteSheet({ vendedor, fechaRendicion, nombreArchivo, mime, base64 }) {
   return llamar("enviarComprobante", { vendedor, fechaRendicion, nombreArchivo, mime, base64 });
 }
+
+// Comprobantes ya enviados por el vendedor: { "fecha de la rendición": "fecha de envío" }.
+export async function fetchComprobantesSheet({ vendedor }) {
+  const r = await llamar("fetchComprobantes", { vendedor });
+  return r.enviados || {};
+}
