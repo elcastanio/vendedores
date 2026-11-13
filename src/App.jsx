@@ -2059,6 +2059,57 @@ function rendicionVencida(r) {
   return dias !== null && dias > DIAS_RENDICION_VENCIDA ? dias : null;
 }
 
+// Achica la foto antes de mandarla (máx. 1600 px, JPEG) para que viaje rápido; los PDF se mandan tal cual.
+function leerArchivoComprobante(file) {
+  return new Promise((resolve, reject) => {
+    const aBase64 = (blob) => { const fr = new FileReader(); fr.onload = () => resolve(String(fr.result).split(",")[1]); fr.onerror = () => reject(new Error("No se pudo leer el archivo.")); fr.readAsDataURL(blob); };
+    if (file.type === "application/pdf") {
+      if (file.size > 8 * 1024 * 1024) return reject(new Error("El PDF pesa más de 8 MB."));
+      return aBase64(file);
+    }
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      c.toBlob((b) => (b ? aBase64(b) : reject(new Error("No se pudo procesar la imagen."))), "image/jpeg", 0.8);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("El archivo no es una imagen ni un PDF.")); };
+    img.src = url;
+  });
+}
+
+function BotonComprobante({ vendor, rendicion }) {
+  const [estado, setEstado] = useState("idle"); // idle | enviando | enviado
+  const [err, setErr] = useState("");
+  const inputRef = useRef(null);
+  const elegir = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setErr(""); setEstado("enviando");
+    try {
+      const esPdf = file.type === "application/pdf";
+      const base64 = await leerArchivoComprobante(file);
+      await sheets.enviarComprobanteSheet({ vendedor: vendor.nombre, fechaRendicion: rendicion.fecha, nombreArchivo: esPdf ? (file.name || "comprobante.pdf") : "comprobante.jpg", mime: esPdf ? "application/pdf" : "image/jpeg", base64 });
+      setEstado("enviado");
+    } catch (ex) { setErr(ex.message || "No se pudo enviar."); setEstado("idle"); }
+  };
+  if (estado === "enviado") return <div className="ec-note"><Check size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Comprobante enviado. Lo recibimos por mail.</div>;
+  return (
+    <div style={{ marginTop: 8 }}>
+      <input ref={inputRef} type="file" accept="image/*,application/pdf" style={{ display: "none" }} onChange={elegir} />
+      <button className="ec-btn ec-btn-ghost" disabled={estado === "enviando"} onClick={() => inputRef.current && inputRef.current.click()} style={{ width: "100%", justifyContent: "center" }}>
+        {estado === "enviando" ? <><Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> Enviando...</> : <><Upload size={14} /> Enviar comprobante de pago</>}
+      </button>
+      {err && <div className="ec-error" style={{ marginTop: 6 }}>{err}</div>}
+    </div>
+  );
+}
+
 function RendicionesTab({ vendor, rendiciones, error, onChanged }) {
   if (!vendor.sheetUrl) return null;
   if (error) return <div className="ec-error">{error}</div>;
@@ -2099,6 +2150,7 @@ function RendicionesTab({ vendor, rendiciones, error, onChanged }) {
             <div className="ec-subtotal"><span>A rendir</span><span>{r.aRendir}</span></div>
             {r.montoPagado && <div className="ec-note">Pagado: {r.montoPagado} {r.fechaPago ? `el ${r.fechaPago}` : ""}</div>}
             {r.observaciones && <div className="ec-note">{r.observaciones}</div>}
+            {String(r.montoPagado || "").trim() === "" && <BotonComprobante vendor={vendor} rendicion={r} />}
           </div>
         ))
       )}
