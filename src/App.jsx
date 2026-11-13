@@ -2083,27 +2083,57 @@ function leerArchivoComprobante(file) {
 }
 
 function BotonComprobante({ vendor, rendicion }) {
-  const [estado, setEstado] = useState("idle"); // idle | enviando | enviado
+  const [estado, setEstado] = useState("idle"); // idle | leyendo | listo | enviando | enviado
   const [err, setErr] = useState("");
+  const [adjunto, setAdjunto] = useState(null); // { base64, mime, nombre, esPdf }
   const inputRef = useRef(null);
   const elegir = async (e) => {
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
     if (!file) return;
-    setErr(""); setEstado("enviando");
+    setErr(""); setEstado("leyendo");
     try {
       const esPdf = file.type === "application/pdf";
       const base64 = await leerArchivoComprobante(file);
-      await sheets.enviarComprobanteSheet({ vendedor: vendor.nombre, fechaRendicion: rendicion.fecha, nombreArchivo: esPdf ? (file.name || "comprobante.pdf") : "comprobante.jpg", mime: esPdf ? "application/pdf" : "image/jpeg", base64 });
-      setEstado("enviado");
-    } catch (ex) { setErr(ex.message || "No se pudo enviar."); setEstado("idle"); }
+      setAdjunto({ base64, esPdf, mime: esPdf ? "application/pdf" : "image/jpeg", nombre: esPdf ? (file.name || "comprobante.pdf") : "comprobante.jpg" });
+      setEstado("listo");
+    } catch (ex) { setErr(ex.message || "No se pudo leer el archivo."); setEstado("idle"); }
+  };
+  const cancelar = () => { setAdjunto(null); setErr(""); setEstado("idle"); };
+  const enviar = async () => {
+    if (!adjunto) return;
+    setErr(""); setEstado("enviando");
+    try {
+      await sheets.enviarComprobanteSheet({ vendedor: vendor.nombre, fechaRendicion: rendicion.fecha, nombreArchivo: adjunto.nombre, mime: adjunto.mime, base64: adjunto.base64 });
+      setAdjunto(null); setEstado("enviado");
+    } catch (ex) { setErr(ex.message || "No se pudo enviar."); setEstado("listo"); }
   };
   if (estado === "enviado") return <div className="ec-note"><Check size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Comprobante enviado. Lo recibimos por mail.</div>;
+  const input = <input ref={inputRef} type="file" accept="image/*,application/pdf" style={{ display: "none" }} onChange={elegir} />;
+  if (adjunto && (estado === "listo" || estado === "enviando")) {
+    const ocupado = estado === "enviando";
+    return (
+      <div style={{ marginTop: 8 }}>
+        {input}
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: TOKENS.textSoft, marginBottom: 6 }}>Revisá el comprobante antes de enviarlo</div>
+        {adjunto.esPdf
+          ? <div className="ec-note" style={{ marginTop: 0 }}><FileDown size={13} style={{ marginRight: 5, verticalAlign: -2 }} />{adjunto.nombre}</div>
+          : <img src={"data:" + adjunto.mime + ";base64," + adjunto.base64} alt="Comprobante" style={{ width: "100%", maxHeight: 320, objectFit: "contain", borderRadius: 8, border: "1px solid " + TOKENS.border, background: "#fff" }} />}
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <button className="ec-btn ec-btn-ghost" disabled={ocupado} onClick={cancelar} style={{ flex: 1, justifyContent: "center" }}>Cambiar archivo</button>
+          <button className="ec-btn ec-btn-primary" disabled={ocupado} onClick={enviar} style={{ flex: 1, justifyContent: "center" }}>
+            {ocupado ? <><Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> Enviando...</> : <><Check size={14} /> Enviar</>}
+          </button>
+        </div>
+        {err && <div className="ec-error" style={{ marginTop: 6 }}>{err}</div>}
+      </div>
+    );
+  }
   return (
     <div style={{ marginTop: 8 }}>
-      <input ref={inputRef} type="file" accept="image/*,application/pdf" style={{ display: "none" }} onChange={elegir} />
-      <button className="ec-btn ec-btn-ghost" disabled={estado === "enviando"} onClick={() => inputRef.current && inputRef.current.click()} style={{ width: "100%", justifyContent: "center" }}>
-        {estado === "enviando" ? <><Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> Enviando...</> : <><Upload size={14} /> Enviar comprobante de pago</>}
+      {input}
+      <button className="ec-btn ec-btn-ghost" disabled={estado === "leyendo"} onClick={() => inputRef.current && inputRef.current.click()} style={{ width: "100%", justifyContent: "center" }}>
+        {estado === "leyendo" ? <><Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> Cargando...</> : <><Upload size={14} /> Adjuntar comprobante de pago</>}
       </button>
       {err && <div className="ec-error" style={{ marginTop: 6 }}>{err}</div>}
     </div>
