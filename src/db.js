@@ -126,11 +126,7 @@ export async function bulkUpsertProducts(rows, existingProducts, campos) {
   // Copia de trabajo de los productos existentes.
   const productos = existingProducts.map((p) => ({ ...p, sku: p.sku || "" }));
   const porSku = {};
-  const porNombre = {};
-  productos.forEach((p) => {
-    if (p.sku) porSku[claveSku(p.sku)] = p;
-    (porNombre[claveNombre(p.nombre)] = porNombre[claveNombre(p.nombre)] || []).push(p);
-  });
+  productos.forEach((p) => { if (p.sku) porSku[claveSku(p.sku)] = p; });
 
   const tienePrecio = (r) => (soloAlgunos ? elegidos : TODOS).some((c) => Number(r[c]) > 0);
   // Las filas con precio van primero: si un nombre está repetido, el producto existente se asocia al SKU que sí tiene precio.
@@ -151,14 +147,9 @@ export async function bulkUpsertProducts(rows, existingProducts, campos) {
     const sku = String(r.sku || "").trim();
     if (sku) { if (skuYaVisto.has(claveSku(sku))) duplicados.push(sku); skuYaVisto.add(claveSku(sku)); }
 
-    // 1) por SKU; 2) por nombre, solo entre productos que todavía no tienen SKU
-    let prod = sku ? porSku[claveSku(sku)] : null;
-    if (!prod) {
-      const candidatos = porNombre[claveNombre(nombre)] || [];
-      prod = sku ? candidatos.find((p) => !p.sku) : candidatos[0];
-      if (prod && sku) { prod.sku = sku; porSku[claveSku(sku)] = prod; }
-    }
-
+    // Se busca SOLO por SKU (el nombre no se usa para encontrar productos).
+    if (!sku) { noEncontrados.push(nombre + " (sin SKU en el Excel)"); return; }
+    const prod = porSku[claveSku(sku)];
     if (!prod) { noEncontrados.push(nombre); return; } // la carga masiva nunca crea productos: solo actualiza los que ya existen
     let fila = mapa.get(prod.id);
     const habiaFila = !!fila;
@@ -188,6 +179,37 @@ export async function bulkUpsertProducts(rows, existingProducts, campos) {
     if (error) throw error;
   }
   return { guardados: paraGuardar.length, creados, duplicados, sinPrecio, noEncontrados };
+}
+
+// Paso de una sola vez: completa el SKU de los productos de la app que todavía no tienen, usando el Excel.
+// Es el único lugar donde se usa el nombre (para saber a qué producto de la app le toca cada SKU).
+export async function assignSkusDesdeExcel(rows, existingProducts) {
+  const clave = (s) => String(s || "").trim().toLowerCase();
+  const usados = new Set(existingProducts.filter((p) => p.sku).map((p) => clave(p.sku)));
+  const libres = {};
+  existingProducts.filter((p) => !p.sku).forEach((p) => { (libres[clave(p.nombre)] = libres[clave(p.nombre)] || []).push(p); });
+  const tienePrecio = (r) => ["minorista", "mayorista", "granel", "comercios"].some((c) => Number(r[c]) > 0);
+  const lista = rows.filter((r) => r.nombre && String(r.sku || "").trim())
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => (tienePrecio(b.r) ? 1 : 0) - (tienePrecio(a.r) ? 1 : 0) || a.i - b.i)
+    .map((x) => x.r);
+  const paraGuardar = [];
+  const sobrantes = []; // SKU del Excel cuyo nombre ya tenía otro SKU asignado
+  lista.forEach((r) => {
+    const sku = String(r.sku).trim();
+    if (usados.has(clave(sku))) return;
+    const cand = libres[clave(r.nombre)];
+    if (!cand || cand.length === 0) { if ((existingProducts.some((p) => clave(p.nombre) === clave(r.nombre)))) sobrantes.push(sku + " · " + String(r.nombre).trim()); return; }
+    const prod = cand.shift();
+    usados.add(clave(sku));
+    paraGuardar.push({ id: prod.id, nombre: prod.nombre, sku, precio_minorista: prod.precio_minorista, precio_mayorista: prod.precio_mayorista, precio_granel: prod.precio_granel, precio_comercios: prod.precio_comercios });
+  });
+  const sinSku = Object.values(libres).flat().map((p) => p.nombre);
+  for (let i = 0; i < paraGuardar.length; i += 500) {
+    const { error } = await supabase.from("products").upsert(paraGuardar.slice(i, i + 500), { onConflict: "id" });
+    if (error) throw error;
+  }
+  return { asignados: paraGuardar.length, sinSku, sobrantes };
 }
 
 // ---------- OBJETIVOS ----------
