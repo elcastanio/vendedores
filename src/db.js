@@ -97,6 +97,7 @@ export async function addProduct(p) {
     precio_granel: Number(p.precio_granel) || 0,
     precio_comercios: Number(p.precio_comercios) || 0,
   };
+  if (p.sku && String(p.sku).trim()) row.sku = String(p.sku).trim(); // solo si lo cargan (la columna sku tiene que existir)
   if (p.es_regalo) row.es_regalo = true; // solo se manda si está marcado (así anda aunque la columna todavía no exista)
   const { error } = await supabase.from("products").insert(row);
   if (error) throw error;
@@ -140,10 +141,10 @@ export async function bulkUpsertProducts(rows, existingProducts, campos) {
     .map((x) => x.r);
 
   const mapa = new Map(); // id -> fila a guardar
-  const nuevosIds = new Set();
   const skuYaVisto = new Set();
   const duplicados = [];
   const sinPrecio = [];
+  const noEncontrados = [];
 
   conLista.forEach((r) => {
     const nombre = String(r.nombre).trim();
@@ -158,17 +159,7 @@ export async function bulkUpsertProducts(rows, existingProducts, campos) {
       if (prod && sku) { prod.sku = sku; porSku[claveSku(sku)] = prod; }
     }
 
-    if (!prod) {
-      // Producto nuevo: se crea con todos sus precios del Excel.
-      prod = { id: uid(), nombre, sku, precio_minorista: 0, precio_mayorista: 0, precio_granel: 0, precio_comercios: 0 };
-      if (sku) porSku[claveSku(sku)] = prod;
-      (porNombre[claveNombre(nombre)] = porNombre[claveNombre(nombre)] || []).push(prod);
-      nuevosIds.add(prod.id);
-      TODOS.forEach((c) => { prod["precio_" + c] = Number(r[c]) || 0; });
-      mapa.set(prod.id, prod);
-      return;
-    }
-
+    if (!prod) { noEncontrados.push(nombre); return; } // la carga masiva nunca crea productos: solo actualiza los que ya existen
     let fila = mapa.get(prod.id);
     const habiaFila = !!fila;
     if (!fila) fila = { id: prod.id, nombre: prod.nombre, sku: prod.sku || "", precio_minorista: prod.precio_minorista, precio_mayorista: prod.precio_mayorista, precio_granel: prod.precio_granel, precio_comercios: prod.precio_comercios };
@@ -187,8 +178,8 @@ export async function bulkUpsertProducts(rows, existingProducts, campos) {
   });
 
   const paraGuardar = Array.from(mapa.values()).map((f) => { const g = { ...f }; if (!g.sku) delete g.sku; return g; });
-  const creados = nuevosIds.size;
-  if (paraGuardar.length === 0) return { guardados: 0, creados: 0, duplicados, sinPrecio };
+  const creados = 0;
+  if (paraGuardar.length === 0) return { guardados: 0, creados: 0, duplicados, sinPrecio, noEncontrados };
   // Supabase soporta hasta cierto tamaño por request; los mandamos en tandas.
   const TAMANIO_TANDA = 500;
   for (let i = 0; i < paraGuardar.length; i += TAMANIO_TANDA) {
@@ -196,7 +187,7 @@ export async function bulkUpsertProducts(rows, existingProducts, campos) {
     const { error } = await supabase.from("products").upsert(tanda, { onConflict: "id" });
     if (error) throw error;
   }
-  return { guardados: paraGuardar.length, creados, duplicados, sinPrecio };
+  return { guardados: paraGuardar.length, creados, duplicados, sinPrecio, noEncontrados };
 }
 
 // ---------- OBJETIVOS ----------
