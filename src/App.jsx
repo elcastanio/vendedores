@@ -2378,7 +2378,8 @@ function parseCatalogWorkbook(wb) {
       comercios: colIndex.comercios >= 0 ? num(fila[colIndex.comercios]) : 0,
     });
   }
-  return { solapa: nombreSolapa, filas: resultado };
+  const columnas = ["minorista", "mayorista", "granel", "comercios"].filter((k) => colIndex[k] >= 0);
+  return { solapa: nombreSolapa, filas: resultado, columnas };
 }
 
 // ---------- CATÁLOGOS ----------
@@ -2518,6 +2519,7 @@ function ProductosAdmin({ products, refreshProducts }) {
   const [editVals, setEditVals] = useState({});
   const [filtro, setFiltro] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [camposElegidos, setCamposElegidos] = useState({ minorista: true, mayorista: true, granel: true, comercios: true });
 
   const agregar = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
@@ -2541,12 +2543,18 @@ function ProductosAdmin({ products, refreshProducts }) {
     try {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf);
-      const { solapa, filas: parseadas } = parseCatalogWorkbook(wb);
+      const { solapa, filas: parseadas, columnas } = parseCatalogWorkbook(wb);
+      const campos = Object.keys(camposElegidos).filter((k) => camposElegidos[k]);
       if (parseadas.length === 0) {
         setError(`No encontré filas con nombre de producto en la solapa "${solapa}". Revisá que tenga una columna Nombre (o "Nombre producto"/"Producto").`);
+      } else if (campos.length === 0) {
+        setError("Elegí al menos un precio para actualizar.");
+      } else if (campos.some((c) => !columnas.includes(c))) {
+        setError(`El archivo no tiene la columna de: ${campos.filter((c) => !columnas.includes(c)).join(", ")}. Destildala o revisá el archivo.`);
       } else {
-        const res = await db.bulkUpsertProducts(parseadas, products);
-        setOk(`Leí la solapa "${solapa}" y guardé ${res.guardados} producto(s).`);
+        const res = await db.bulkUpsertProducts(parseadas, products, campos);
+        const nf = res.noEncontrados || [];
+        setOk(`Leí la solapa "${solapa}" y guardé ${res.guardados} producto(s).` + (nf.length ? ` No existen en la app y no se tocaron (${nf.length}): ${nf.slice(0, 10).join(", ")}${nf.length > 10 ? "…" : ""}.` : ""));
         refreshProducts();
       }
     } catch (err) { setError("No se pudo leer el archivo: " + err.message); }
@@ -2569,6 +2577,17 @@ function ProductosAdmin({ products, refreshProducts }) {
           Reconoce columnas Nombre / "Nombre producto" / Producto, y Minorista, Mayorista, Comercios,
           Granel o "Granel/Industrias". Si el nombre ya existe (sin importar mayúsculas/minúsculas),
           actualiza sus precios; si es nuevo, lo agrega. Ideal para subir tu archivo de precios tal cual.
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Qué precios actualizar</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
+            {[["minorista", "Minorista"], ["mayorista", "Mayorista"], ["granel", "Granel"], ["comercios", "Comercios"]].map(([k, l]) => (
+              <label key={k} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, cursor: "pointer" }}>
+                <input type="checkbox" checked={camposElegidos[k]} onChange={(e) => setCamposElegidos({ ...camposElegidos, [k]: e.target.checked })} /> {l}
+              </label>
+            ))}
+          </div>
+          <div className="ec-sub" style={{ marginTop: 6 }}>Si destildás alguno, ese precio no se toca y solo se actualizan productos que ya existen (no se crean nuevos).</div>
         </div>
         <label className="ec-btn ec-btn-primary" style={{ cursor: "pointer" }}>
           <Upload size={15} /> {uploading ? "Cargando..." : "Elegir archivo Excel"}
