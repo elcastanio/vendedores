@@ -2515,7 +2515,7 @@ function CatalogosAdmin() {
 }
 
 function ProductosAdmin({ products, refreshProducts }) {
-  const [form, setForm] = useState({ nombre: "", precio_minorista: "", precio_mayorista: "", precio_granel: "", precio_comercios: "", es_regalo: false });
+  const [form, setForm] = useState({ nombre: "", precio_minorista: "", precio_mayorista: "", precio_granel: "", precio_comercios: "", es_regalo: false, sku: "" });
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
   const [editId, setEditId] = useState(null);
@@ -2528,7 +2528,7 @@ function ProductosAdmin({ products, refreshProducts }) {
     if (e && e.preventDefault) e.preventDefault();
     setError("");
     if (!form.nombre.trim()) return;
-    try { await db.addProduct(form); setForm({ nombre: "", precio_minorista: "", precio_mayorista: "", precio_granel: "", precio_comercios: "", es_regalo: false }); refreshProducts(); }
+    try { await db.addProduct(form); setForm({ nombre: "", precio_minorista: "", precio_mayorista: "", precio_granel: "", precio_comercios: "", es_regalo: false, sku: "" }); refreshProducts(); }
     catch (err) { setError("No se pudo guardar: " + err.message); }
   };
   const startEdit = (p) => { setEditId(p.id); setEditVals({ ...p }); };
@@ -2556,7 +2556,7 @@ function ProductosAdmin({ products, refreshProducts }) {
         setError(`El archivo no tiene la columna de: ${campos.filter((c) => !columnas.includes(c)).join(", ")}. Destildala o revisá el archivo.`);
       } else {
         const res = await db.bulkUpsertProducts(parseadas, products, campos);
-        const msg = `Leí la solapa "${solapa}": actualicé ${res.guardados - (res.creados || 0)} producto(s) y creé ${res.creados || 0} nuevo(s).`
+        const msg = `Leí la solapa "${solapa}": actualicé ${res.guardados} producto(s).` + ((res.noEncontrados || []).length ? ` No están en la app (no se crean): ${res.noEncontrados.length}.` : "")
           + ((res.sinPrecio || []).length ? ` Sin precio en el Excel (no se tocaron): ${res.sinPrecio.length}.` : "")
           + ((res.duplicados || []).length ? ` SKU repetidos en el Excel: ${[...new Set(res.duplicados)].slice(0, 10).join(", ")}.` : "");
         setOk(msg);
@@ -2592,7 +2592,7 @@ function ProductosAdmin({ products, refreshProducts }) {
               </label>
             ))}
           </div>
-          <div className="ec-sub" style={{ marginTop: 6 }}>Si destildás alguno, ese precio no se toca en los productos que ya existen. Los productos nuevos (SKU que no está en la app) se crean con todos sus precios.</div>
+          <div className="ec-sub" style={{ marginTop: 6 }}>Si destildás alguno, ese precio no se toca. La carga masiva solo actualiza productos que ya existen (busca por SKU y, si no tienen, por nombre); no crea productos nuevos. </div>
         </div>
         <label className="ec-btn ec-btn-primary" style={{ cursor: "pointer" }}>
           <Upload size={15} /> {uploading ? "Cargando..." : "Elegir archivo Excel"}
@@ -2609,6 +2609,7 @@ function ProductosAdmin({ products, refreshProducts }) {
         </div>
         <div onKeyDown={(e) => { if (e.key === "Enter") agregar(e); }} style={{ marginBottom: 16 }}>
           <div className="ec-field"><label>Nombre del producto</label><input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></div>
+          <div className="ec-field"><label>SKU</label><input value={form.sku || ""} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="Ej: P1MIX000882" /></div>
           <div className="ec-row2">
             <div className="ec-field"><label>Precio Minorista</label><input type="number" value={form.precio_minorista} onChange={(e) => setForm({ ...form, precio_minorista: e.target.value })} /></div>
             <div className="ec-field"><label>Precio Mayorista</label><input type="number" value={form.precio_mayorista} onChange={(e) => setForm({ ...form, precio_mayorista: e.target.value })} /></div>
