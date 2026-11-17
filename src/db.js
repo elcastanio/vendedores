@@ -84,6 +84,7 @@ export async function fetchProducts() {
     precio_granel: Number(p.precio_granel) || 0,
     precio_comercios: Number(p.precio_comercios) || 0,
     es_regalo: p.es_regalo === true,
+    sku: p.sku ? String(p.sku).trim() : "",
   }));
 }
 
@@ -118,38 +119,76 @@ export async function bulkUpsertProducts(rows, existingProducts, campos) {
   const TODOS = ["minorista", "mayorista", "granel", "comercios"];
   const elegidos = Array.isArray(campos) && campos.length ? campos.filter((c) => TODOS.includes(c)) : TODOS;
   const soloAlgunos = elegidos.length < TODOS.length;
+  const claveSku = (s) => String(s || "").trim().toLowerCase();
+  const claveNombre = (s) => String(s || "").trim().toLowerCase();
+
+  // Copia de trabajo de los productos existentes.
+  const productos = existingProducts.map((p) => ({ ...p, sku: p.sku || "" }));
+  const porSku = {};
   const porNombre = {};
-  existingProducts.forEach((p) => { porNombre[p.nombre.trim().toLowerCase()] = p; });
-  const noEncontrados = [];
-  const paraGuardar = [];
-  rows.filter((r) => r.nombre && String(r.nombre).trim()).forEach((r) => {
+  productos.forEach((p) => {
+    if (p.sku) porSku[claveSku(p.sku)] = p;
+    (porNombre[claveNombre(p.nombre)] = porNombre[claveNombre(p.nombre)] || []).push(p);
+  });
+
+  const tienePrecio = (r) => (soloAlgunos ? elegidos : TODOS).some((c) => Number(r[c]) > 0);
+  // Las filas con precio van primero: si un nombre está repetido, el producto existente se asocia al SKU que sí tiene precio.
+  const conLista = rows
+    .filter((r) => r.nombre && String(r.nombre).trim())
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => (tienePrecio(b.r) ? 1 : 0) - (tienePrecio(a.r) ? 1 : 0) || a.i - b.i)
+    .map((x) => x.r);
+
+  const mapa = new Map(); // id -> fila a guardar
+  const nuevosIds = new Set();
+  const skuYaVisto = new Set();
+  const duplicados = [];
+  const sinPrecio = [];
+
+  conLista.forEach((r) => {
     const nombre = String(r.nombre).trim();
-    const existente = porNombre[nombre.toLowerCase()];
-    if (soloAlgunos) {
-      // Actualizar solo algunos precios: se tocan únicamente los precios elegidos de productos que ya existen.
-      if (!existente) { noEncontrados.push(nombre); return; }
-      const fila = {
-        id: existente.id,
-        nombre: existente.nombre,
-        precio_minorista: existente.precio_minorista,
-        precio_mayorista: existente.precio_mayorista,
-        precio_granel: existente.precio_granel,
-        precio_comercios: existente.precio_comercios,
-      };
-      elegidos.forEach((c) => { fila["precio_" + c] = Number(r[c]) || 0; });
-      paraGuardar.push(fila);
+    const sku = String(r.sku || "").trim();
+    if (sku) { if (skuYaVisto.has(claveSku(sku))) duplicados.push(sku); skuYaVisto.add(claveSku(sku)); }
+
+    // 1) por SKU; 2) por nombre, solo entre productos que todavía no tienen SKU
+    let prod = sku ? porSku[claveSku(sku)] : null;
+    if (!prod) {
+      const candidatos = porNombre[claveNombre(nombre)] || [];
+      prod = sku ? candidatos.find((p) => !p.sku) : candidatos[0];
+      if (prod && sku) { prod.sku = sku; porSku[claveSku(sku)] = prod; }
+    }
+
+    if (!prod) {
+      // Producto nuevo: se crea con todos sus precios del Excel.
+      prod = { id: uid(), nombre, sku, precio_minorista: 0, precio_mayorista: 0, precio_granel: 0, precio_comercios: 0 };
+      if (sku) porSku[claveSku(sku)] = prod;
+      (porNombre[claveNombre(nombre)] = porNombre[claveNombre(nombre)] || []).push(prod);
+      nuevosIds.add(prod.id);
+      TODOS.forEach((c) => { prod["precio_" + c] = Number(r[c]) || 0; });
+      mapa.set(prod.id, prod);
       return;
     }
-    paraGuardar.push({
-      id: existente ? existente.id : uid(),
-      nombre,
-      precio_minorista: Number(r.minorista) || 0,
-      precio_mayorista: Number(r.mayorista) || 0,
-      precio_granel: Number(r.granel) || 0,
-      precio_comercios: Number(r.comercios) || 0,
-    });
+
+    let fila = mapa.get(prod.id);
+    const habiaFila = !!fila;
+    if (!fila) fila = { id: prod.id, nombre: prod.nombre, sku: prod.sku || "", precio_minorista: prod.precio_minorista, precio_mayorista: prod.precio_mayorista, precio_granel: prod.precio_granel, precio_comercios: prod.precio_comercios };
+    let toco = false;
+    if (soloAlgunos) {
+      // Una celda vacía o en 0 NO pisa el precio que ya tiene el producto.
+      elegidos.forEach((c) => { const v = Number(r[c]); if (v > 0) { fila["precio_" + c] = v; toco = true; } });
+    } else {
+      TODOS.forEach((c) => { fila["precio_" + c] = Number(r[c]) || 0; });
+      toco = true;
+    }
+    if (fila.sku !== (prod.sku || "")) fila.sku = prod.sku || "";
+    if (!toco && !habiaFila) sinPrecio.push(nombre);
+    // Se guarda si cambió algún precio o si solo se está completando el SKU.
+    if (toco || !existingProducts.find((e) => e.id === prod.id).sku && prod.sku) mapa.set(prod.id, fila);
   });
-  if (paraGuardar.length === 0) return { guardados: 0, noEncontrados };
+
+  const paraGuardar = Array.from(mapa.values()).map((f) => { const g = { ...f }; if (!g.sku) delete g.sku; return g; });
+  const creados = nuevosIds.size;
+  if (paraGuardar.length === 0) return { guardados: 0, creados: 0, duplicados, sinPrecio };
   // Supabase soporta hasta cierto tamaño por request; los mandamos en tandas.
   const TAMANIO_TANDA = 500;
   for (let i = 0; i < paraGuardar.length; i += TAMANIO_TANDA) {
@@ -157,7 +196,7 @@ export async function bulkUpsertProducts(rows, existingProducts, campos) {
     const { error } = await supabase.from("products").upsert(tanda, { onConflict: "id" });
     if (error) throw error;
   }
-  return { guardados: paraGuardar.length, noEncontrados };
+  return { guardados: paraGuardar.length, creados, duplicados, sinPrecio };
 }
 
 // ---------- OBJETIVOS ----------
@@ -189,7 +228,7 @@ export async function bulkUpsertObjetivos(rows, vendors) {
     const { error } = await supabase.from("objetivos").upsert(paraGuardar, { onConflict: "vendor_id,mes" });
     if (error) throw error;
   }
-  return { guardados: paraGuardar.length, noEncontrados };
+  return { guardados: paraGuardar.length, noEncontrados, duplicados };
 }
 
 // ---------- CLIENTES ----------
