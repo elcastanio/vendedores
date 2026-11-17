@@ -114,24 +114,42 @@ export async function deleteProduct(id) {
 // carga masiva: filas = [{ nombre, minorista, mayorista, granel, comercios }]
 // Actualiza el producto si ya existe uno con ese nombre (sin importar mayúsculas),
 // o lo crea si es nuevo.
-export async function bulkUpsertProducts(rows, existingProducts) {
+export async function bulkUpsertProducts(rows, existingProducts, campos) {
+  const TODOS = ["minorista", "mayorista", "granel", "comercios"];
+  const elegidos = Array.isArray(campos) && campos.length ? campos.filter((c) => TODOS.includes(c)) : TODOS;
+  const soloAlgunos = elegidos.length < TODOS.length;
   const porNombre = {};
-  existingProducts.forEach((p) => { porNombre[p.nombre.trim().toLowerCase()] = p.id; });
-  const paraGuardar = rows
-    .filter((r) => r.nombre && String(r.nombre).trim())
-    .map((r) => {
-      const nombre = String(r.nombre).trim();
-      const id = porNombre[nombre.toLowerCase()] || uid();
-      return {
-        id,
-        nombre,
-        precio_minorista: Number(r.minorista) || 0,
-        precio_mayorista: Number(r.mayorista) || 0,
-        precio_granel: Number(r.granel) || 0,
-        precio_comercios: Number(r.comercios) || 0,
+  existingProducts.forEach((p) => { porNombre[p.nombre.trim().toLowerCase()] = p; });
+  const noEncontrados = [];
+  const paraGuardar = [];
+  rows.filter((r) => r.nombre && String(r.nombre).trim()).forEach((r) => {
+    const nombre = String(r.nombre).trim();
+    const existente = porNombre[nombre.toLowerCase()];
+    if (soloAlgunos) {
+      // Actualizar solo algunos precios: se tocan únicamente los precios elegidos de productos que ya existen.
+      if (!existente) { noEncontrados.push(nombre); return; }
+      const fila = {
+        id: existente.id,
+        nombre: existente.nombre,
+        precio_minorista: existente.precio_minorista,
+        precio_mayorista: existente.precio_mayorista,
+        precio_granel: existente.precio_granel,
+        precio_comercios: existente.precio_comercios,
       };
+      elegidos.forEach((c) => { fila["precio_" + c] = Number(r[c]) || 0; });
+      paraGuardar.push(fila);
+      return;
+    }
+    paraGuardar.push({
+      id: existente ? existente.id : uid(),
+      nombre,
+      precio_minorista: Number(r.minorista) || 0,
+      precio_mayorista: Number(r.mayorista) || 0,
+      precio_granel: Number(r.granel) || 0,
+      precio_comercios: Number(r.comercios) || 0,
     });
-  if (paraGuardar.length === 0) return { guardados: 0 };
+  });
+  if (paraGuardar.length === 0) return { guardados: 0, noEncontrados };
   // Supabase soporta hasta cierto tamaño por request; los mandamos en tandas.
   const TAMANIO_TANDA = 500;
   for (let i = 0; i < paraGuardar.length; i += TAMANIO_TANDA) {
@@ -139,7 +157,7 @@ export async function bulkUpsertProducts(rows, existingProducts) {
     const { error } = await supabase.from("products").upsert(tanda, { onConflict: "id" });
     if (error) throw error;
   }
-  return { guardados: paraGuardar.length };
+  return { guardados: paraGuardar.length, noEncontrados };
 }
 
 // ---------- OBJETIVOS ----------
