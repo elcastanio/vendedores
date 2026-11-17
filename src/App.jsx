@@ -2330,6 +2330,7 @@ function parseCatalogWorkbook(wb) {
 
   const ALIAS = {
     nombre: ["nombre producto", "nombre", "producto"],
+    sku: ["sku"],
     minorista: ["minorista"],
     mayorista: ["mayorista"],
     granel: ["granel/industrias", "granel"],
@@ -2348,6 +2349,7 @@ function parseCatalogWorkbook(wb) {
     };
     colIndex = {
       nombre: encontrar(ALIAS.nombre),
+      sku: encontrar(ALIAS.sku),
       minorista: encontrar(ALIAS.minorista),
       mayorista: encontrar(ALIAS.mayorista),
       granel: encontrar(ALIAS.granel),
@@ -2372,6 +2374,7 @@ function parseCatalogWorkbook(wb) {
     if (!nombre) continue;
     resultado.push({
       nombre,
+      sku: colIndex.sku >= 0 ? String(fila[colIndex.sku] || "").trim() : "",
       minorista: colIndex.minorista >= 0 ? num(fila[colIndex.minorista]) : 0,
       mayorista: colIndex.mayorista >= 0 ? num(fila[colIndex.mayorista]) : 0,
       granel: colIndex.granel >= 0 ? num(fila[colIndex.granel]) : 0,
@@ -2553,8 +2556,10 @@ function ProductosAdmin({ products, refreshProducts }) {
         setError(`El archivo no tiene la columna de: ${campos.filter((c) => !columnas.includes(c)).join(", ")}. Destildala o revisá el archivo.`);
       } else {
         const res = await db.bulkUpsertProducts(parseadas, products, campos);
-        const nf = res.noEncontrados || [];
-        setOk(`Leí la solapa "${solapa}" y guardé ${res.guardados} producto(s).` + (nf.length ? ` No existen en la app y no se tocaron (${nf.length}): ${nf.slice(0, 10).join(", ")}${nf.length > 10 ? "…" : ""}.` : ""));
+        const msg = `Leí la solapa "${solapa}": actualicé ${res.guardados - (res.creados || 0)} producto(s) y creé ${res.creados || 0} nuevo(s).`
+          + ((res.sinPrecio || []).length ? ` Sin precio en el Excel (no se tocaron): ${res.sinPrecio.length}.` : "")
+          + ((res.duplicados || []).length ? ` SKU repetidos en el Excel: ${[...new Set(res.duplicados)].slice(0, 10).join(", ")}.` : "");
+        setOk(msg);
         refreshProducts();
       }
     } catch (err) { setError("No se pudo leer el archivo: " + err.message); }
@@ -2587,7 +2592,7 @@ function ProductosAdmin({ products, refreshProducts }) {
               </label>
             ))}
           </div>
-          <div className="ec-sub" style={{ marginTop: 6 }}>Si destildás alguno, ese precio no se toca y solo se actualizan productos que ya existen (no se crean nuevos).</div>
+          <div className="ec-sub" style={{ marginTop: 6 }}>Si destildás alguno, ese precio no se toca en los productos que ya existen. Los productos nuevos (SKU que no está en la app) se crean con todos sus precios.</div>
         </div>
         <label className="ec-btn ec-btn-primary" style={{ cursor: "pointer" }}>
           <Upload size={15} /> {uploading ? "Cargando..." : "Elegir archivo Excel"}
@@ -2642,7 +2647,7 @@ function ProductosAdmin({ products, refreshProducts }) {
               </tr>
             ) : (
               <tr key={p.id}>
-                <td>{p.nombre}{p.es_regalo && <span className="ec-badge ec-badge-pend" style={{ marginLeft: 6 }}>REGALO</span>}</td><td>{fmtMoney(p.precio_minorista)}</td><td>{fmtMoney(p.precio_mayorista)}</td><td>{fmtMoney(p.precio_granel)}</td><td>{fmtMoney(p.precio_comercios)}</td>
+                <td>{p.nombre}{p.es_regalo && <span className="ec-badge ec-badge-pend" style={{ marginLeft: 6 }}>REGALO</span>}{p.sku && <div style={{ fontSize: 11, color: TOKENS.textSoft }}>{p.sku}</div>}</td><td>{fmtMoney(p.precio_minorista)}</td><td>{fmtMoney(p.precio_mayorista)}</td><td>{fmtMoney(p.precio_granel)}</td><td>{fmtMoney(p.precio_comercios)}</td>
                 <td className="ec-row-actions">
                   <button className="ec-btn ec-btn-ghost" style={{ padding: "6px 9px" }} onClick={() => startEdit(p)}>Editar</button>
                   <button className="ec-btn ec-btn-ghost" style={{ padding: "6px 9px", color: TOKENS.danger }} onClick={() => eliminar(p.id)}>Borrar</button>
