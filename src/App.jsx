@@ -2556,10 +2556,28 @@ function ProductosAdmin({ products, refreshProducts }) {
         setError(`El archivo no tiene la columna de: ${campos.filter((c) => !columnas.includes(c)).join(", ")}. Destildala o revisá el archivo.`);
       } else {
         const res = await db.bulkUpsertProducts(parseadas, products, campos);
-        const msg = `Leí la solapa "${solapa}": actualicé ${res.guardados} producto(s).` + ((res.noEncontrados || []).length ? ` No están en la app (no se crean): ${res.noEncontrados.length}.` : "")
+        const msg = `Leí la solapa "${solapa}": actualicé ${res.guardados} producto(s).` + ((res.noEncontrados || []).length ? ` No se encontró ese SKU en la app (no se crean): ${res.noEncontrados.length}.` : "")
           + ((res.sinPrecio || []).length ? ` Sin precio en el Excel (no se tocaron): ${res.sinPrecio.length}.` : "")
           + ((res.duplicados || []).length ? ` SKU repetidos en el Excel: ${[...new Set(res.duplicados)].slice(0, 10).join(", ")}.` : "");
         setOk(msg);
+        refreshProducts();
+      }
+    } catch (err) { setError("No se pudo leer el archivo: " + err.message); }
+    setUploading(false);
+    e.target.value = "";
+  };
+
+  const completarSkus = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setError(""); setOk(""); setUploading(true);
+    try {
+      const wb = XLSX.read(await file.arrayBuffer());
+      const { filas: parseadas, columnas } = parseCatalogWorkbook(wb);
+      if (!parseadas.some((f) => f.sku)) setError("El archivo no tiene una columna SKU con datos.");
+      else {
+        const res = await db.assignSkusDesdeExcel(parseadas, products);
+        setOk(`Completé el SKU de ${res.asignados} producto(s). Siguen sin SKU: ${res.sinSku.length}` + (res.sinSku.length ? ` (${res.sinSku.slice(0, 8).join(", ")}${res.sinSku.length > 8 ? "…" : ""})` : "") + ".");
         refreshProducts();
       }
     } catch (err) { setError("No se pudo leer el archivo: " + err.message); }
@@ -2592,12 +2610,19 @@ function ProductosAdmin({ products, refreshProducts }) {
               </label>
             ))}
           </div>
-          <div className="ec-sub" style={{ marginTop: 6 }}>Si destildás alguno, ese precio no se toca. La carga masiva solo actualiza productos que ya existen (busca por SKU y, si no tienen, por nombre); no crea productos nuevos. </div>
+          <div className="ec-sub" style={{ marginTop: 6 }}>Si destildás alguno, ese precio no se toca. La carga masiva solo actualiza productos que ya existen (busca solo por SKU); no crea productos nuevos. </div>
         </div>
         <label className="ec-btn ec-btn-primary" style={{ cursor: "pointer" }}>
           <Upload size={15} /> {uploading ? "Cargando..." : "Elegir archivo Excel"}
           <input type="file" accept=".xlsx,.xls" onChange={manejarArchivo} style={{ display: "none" }} disabled={uploading} />
         </label>
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px dashed " + TOKENS.border }}>
+          <div className="ec-sub" style={{ marginBottom: 8 }}>Una sola vez: completa el SKU de los productos de la app que todavía no lo tienen. Usa el nombre solo para saber a qué producto le toca cada SKU.</div>
+          <label className="ec-btn ec-btn-ghost" style={{ cursor: "pointer" }}>
+            <Upload size={15} /> {uploading ? "Cargando..." : "Completar SKU desde Excel"}
+            <input type="file" accept=".xlsx,.xls" onChange={completarSkus} style={{ display: "none" }} disabled={uploading} />
+          </label>
+        </div>
         {error && <div className="ec-error">{error}</div>}
         {ok && <div className="ec-ok">{ok}</div>}
       </div>
