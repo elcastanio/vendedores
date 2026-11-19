@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import * as db from "./db";
 import * as sheets from "./sheetsClient";
-import { descargarComprobantePedido, descargarResumenDespacho, descargarTerminosFirmados, descargarDetallePedido } from "./pdfTicket";
+import { descargarComprobantePedido, descargarResumenDespacho, descargarTerminosFirmados, terminosFirmadosBase64, descargarDetallePedido } from "./pdfTicket";
 import { calcularBolsas, textoBolsas } from "./bolsas";
 import { TERMINOS_VERSION, TERMINOS_TITULO, TERMINOS_CLAUSULAS } from "./terminos";
 import { soportaPush, suscribirVendedor, yaEstaSuscripto, registrarSiYaSuscripto } from "./push";
@@ -1734,6 +1734,7 @@ function TerminosCard({ vendor }) {
   const [firma, setFirma] = useState(null);
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const [avisoMail, setAvisoMail] = useState(""); // "", "ok" o "error": envío del documento firmado a administración
 
   useEffect(() => {
     let vivo = true;
@@ -1760,6 +1761,15 @@ function TerminosCard({ vendor }) {
       const f = await db.guardarTerminos({ vendorId: vendor.id, version: TERMINOS_VERSION, nombre: nombre.trim(), dni: dniLimpio, firma });
       setFirmado(f);
       setAbierto(false);
+      // El documento firmado se manda por mail a administración (la firma ya quedó guardada).
+      try {
+        const { nombreArchivo, base64 } = await terminosFirmadosBase64({
+          titulo: TERMINOS_TITULO, clausulas: TERMINOS_CLAUSULAS, version: f.version,
+          nombre: f.nombre, dni: f.dni, firma: f.firma, aceptadoEn: f.aceptadoEn,
+        });
+        await sheets.enviarTerminosFirmadosSheet({ vendedor: vendor.nombre, version: f.version, nombreArchivo, base64 });
+        setAvisoMail("ok");
+      } catch (e) { setAvisoMail("error"); }
       descargar(f);
     } catch (e) { setError("No se pudo guardar la firma: " + e.message); }
     setGuardando(false);
@@ -1775,6 +1785,8 @@ function TerminosCard({ vendor }) {
           {vigente ? (
             <div className="ec-sub" style={{ marginBottom: 10, color: TOKENS.olive, fontWeight: 600 }}>
               ✓ Firmados el {new Date(firmado.aceptadoEn).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })}
+              {avisoMail === "ok" && <div style={{ fontWeight: 400, color: TOKENS.text }}>Se envió una copia firmada a administración.</div>}
+              {avisoMail === "error" && <div className="ec-error" style={{ fontWeight: 400, marginTop: 6 }}>Tu firma quedó guardada, pero no se pudo enviar la copia a administración. Avisales para que la descarguen.</div>}
             </div>
           ) : (
             <div className="ec-sub" style={{ marginBottom: 10 }}>
