@@ -477,7 +477,7 @@ export async function descargarResumenDespacho(datos) {
 // ---------------------------------------------------------------------------
 // Términos y condiciones firmados (con DNI y firma dibujada en pantalla).
 // ---------------------------------------------------------------------------
-export async function descargarTerminosFirmados({ titulo, clausulas, version, nombre, dni, firma, aceptadoEn }) {
+async function armarTerminosFirmados({ titulo, clausulas, version, nombre, dni, firma, aceptadoEn }) {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = 595, pageH = 842, margen = 56, ancho = pageW - margen * 2;
   const limiteY = pageH - 70;
@@ -497,12 +497,26 @@ export async function descargarTerminosFirmados({ titulo, clausulas, version, no
   doc.text(`Versión ${version}`, margen, y); y += 22;
 
   clausulas.forEach(([tit, texto]) => {
-    const lineas = doc.splitTextToSize(texto, ancho);
+    // La tipografía tiene que estar fijada ANTES de partir el texto en renglones; si no, los renglones se miden mal.
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10);
+    const lineas = doc.splitTextToSize(texto, ancho).map((l) => l.trim());
     nuevaPaginaSiHaceFalta(16 + lineas.length * 13 + 10);
     doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); doc.setTextColor(...TEXT);
     doc.text(tit, margen, y); y += 15;
     doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(...TEXT);
-    lineas.forEach((l) => { doc.text(l, margen, y); y += 13; });
+    // Texto justificado: se reparte el espacio sobrante entre las palabras de cada renglón (menos el último del párrafo).
+    lineas.forEach((l, i) => {
+      const palabras = l.split(/\s+/).filter(Boolean);
+      if (i < lineas.length - 1 && palabras.length > 1) {
+        const anchoPalabras = palabras.reduce((s, p) => s + doc.getTextWidth(p), 0);
+        const espacio = (ancho - anchoPalabras) / (palabras.length - 1);
+        let x = margen;
+        palabras.forEach((p) => { doc.text(p, x, y); x += doc.getTextWidth(p) + espacio; });
+      } else {
+        doc.text(l, margen, y);
+      }
+      y += 13;
+    });
     y += 9;
   });
 
@@ -522,8 +536,31 @@ export async function descargarTerminosFirmados({ titulo, clausulas, version, no
   doc.setDrawColor(...TEXT_SOFT); doc.line(margen, y, margen + 220, y); y += 12;
   doc.setFontSize(8.5); doc.setTextColor(...TEXT_SOFT); doc.text("Firma", margen, y);
 
+  // Pie de cada hoja: firma, nombre, DNI y número de página (valida cada hoja de los términos).
+  const total = doc.getNumberOfPages();
+  for (let p = 1; p <= total; p++) {
+    doc.setPage(p);
+    doc.setDrawColor(...BORDER); doc.setLineWidth(0.5); doc.line(margen, pageH - 60, margen + ancho, pageH - 60);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...TEXT_SOFT);
+    doc.text(`${nombre} · DNI ${dni}`, margen, pageH - 42);
+    doc.text(`Versión ${version} · Hoja ${p} de ${total}`, margen, pageH - 29);
+    try { doc.addImage(firma, "PNG", margen + ancho - 70, pageH - 56, 70, 28); } catch (e) { /* firma ilegible */ }
+  }
+
   const nombreArchivo = `Terminos y condiciones - ${nombre}.pdf`.replace(/[\\/:*?"<>|]/g, "");
+  return { doc, nombreArchivo };
+}
+
+export async function descargarTerminosFirmados(datos) {
+  const { doc, nombreArchivo } = await armarTerminosFirmados(datos);
   await compartirODescargar(doc, nombreArchivo);
+}
+
+// El mismo PDF firmado, en base64 (para mandarlo por mail a administración).
+export async function terminosFirmadosBase64(datos) {
+  const { doc, nombreArchivo } = await armarTerminosFirmados(datos);
+  const uri = doc.output("datauristring");
+  return { nombreArchivo, base64: uri.slice(uri.indexOf("base64,") + 7) };
 }
 
 // ---------------------------------------------------------------------------
