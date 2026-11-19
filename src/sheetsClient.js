@@ -144,6 +144,11 @@ export async function enviarComprobanteSheet({ vendedor, fechaRendicion, nombreA
   return llamar("enviarComprobante", { vendedor, fechaRendicion, nombreArchivo, mime, base64 });
 }
 
+// Manda por mail a administración el PDF de los términos y condiciones firmado por el vendedor.
+export async function enviarTerminosFirmadosSheet({ vendedor, version, nombreArchivo, base64 }) {
+  return llamar("enviarTerminos", { vendedor, version, nombreArchivo, base64 });
+}
+
 // Comprobantes ya enviados por el vendedor: { "fecha de la rendición": "fecha de envío" }.
 export async function fetchComprobantesSheet({ vendedor }) {
   const r = await llamar("fetchComprobantes", { vendedor });
