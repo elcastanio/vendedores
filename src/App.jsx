@@ -2109,7 +2109,6 @@ function BotonComprobante({ vendor, rendicion, enviadoEl, onEnviado }) {
       onEnviado && onEnviado(rendicion.fecha, (r && r.enviadoEl) || "hoy");
     } catch (ex) { setErr(ex.message || "No se pudo enviar."); setEstado("listo"); }
   };
-  if (enviadoEl) return <div className="ec-note"><Check size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Comprobante enviado el {enviadoEl}. Lo recibimos por mail.</div>;
   const input = <input ref={inputRef} type="file" accept="image/*,application/pdf" style={{ display: "none" }} onChange={elegir} />;
   if (adjunto && (estado === "listo" || estado === "enviando")) {
     const ocupado = estado === "enviando";
@@ -2132,8 +2131,9 @@ function BotonComprobante({ vendor, rendicion, enviadoEl, onEnviado }) {
   return (
     <div style={{ marginTop: 8 }}>
       {input}
+      {enviadoEl && <div className="ec-note" style={{ marginTop: 0, marginBottom: 8 }}><Check size={12} style={{ marginRight: 5, verticalAlign: -2 }} />Recibimos tu comprobante el {enviadoEl}.</div>}
       <button className="ec-btn ec-btn-ghost" disabled={estado === "leyendo"} onClick={() => inputRef.current && inputRef.current.click()} style={{ width: "100%", justifyContent: "center" }}>
-        {estado === "leyendo" ? <><Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> Cargando...</> : <><Upload size={14} /> Adjuntar comprobante de pago</>}
+        {estado === "leyendo" ? <><Loader2 size={14} style={{ animation: "spin 0.9s linear infinite" }} /> Cargando...</> : <><Upload size={14} /> {enviadoEl ? "Adjuntar otro comprobante" : "Adjuntar comprobante de pago"}</>}
       </button>
       {err && <div className="ec-error" style={{ marginTop: 6 }}>{err}</div>}
     </div>
