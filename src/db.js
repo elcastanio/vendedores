@@ -367,6 +367,14 @@ export async function addPremios(lista) {
   return rows;
 }
 
+// Corrige los montos de un premio. Falla si el vendedor aplicó algo mientras tanto (para no pisar una aplicación).
+export async function updatePremioMontos(premio, objetivo, equipo) {
+  const { data, error } = await supabase.from("premios").update({ objetivo, equipo })
+    .eq("id", premio.id).eq("usado_objetivo", premio.usadoObjetivo).eq("usado_equipo", premio.usadoEquipo).select("id");
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error("El vendedor aplicó el premio mientras lo editabas. Recargá la pantalla y probá de nuevo.");
+}
+
 export async function setPremioHabilitado(ids, habilitado) {
   const { error } = await supabase.from("premios").update({ habilitado }).in("id", ids);
   if (error) throw error;
