@@ -153,6 +153,26 @@ function saludoSegunHora() {
 function fmtMoney(n) {
   return "$" + Number(n || 0).toLocaleString("es-AR", { maximumFractionDigits: 0 });
 }
+// Para premios: muestra hasta 2 decimales solo si los hay ($1.234,50).
+function fmtMoney2(n) {
+  return "$" + Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+// Lee un monto escrito a mano: acepta "30000", "30.000", "30.000,50", "30000,5" y "30000.50".
+function parseMontoInput(t) {
+  let x = String(t || "").replace(/[^0-9.,]/g, "");
+  if (!x) return 0;
+  const c = x.lastIndexOf(","), p = x.lastIndexOf(".");
+  if (c !== -1 && p !== -1) {
+    const dec = c > p ? "," : ".";
+    x = dec === "," ? x.replace(/\./g, "").replace(",", ".") : x.replace(/,/g, "");
+  } else if (c !== -1) {
+    x = (x.match(/,/g).length === 1 && /,\d{1,2}$/.test(x)) ? x.replace(",", ".") : x.replace(/,/g, "");
+  } else if (p !== -1) {
+    x = (x.match(/\./g).length === 1 && /\.\d{1,2}$/.test(x)) ? x : x.replace(/\./g, "");
+  }
+  const n = Number(x);
+  return isFinite(n) ? Math.round(n * 100) / 100 : 0;
+}
 function claseBadgeEstado(estado) {
   if (estado === "DESPACHADO") return "ec-badge-desp";
   if (estado === "EN PROCESO") return "ec-badge-proceso";
@@ -1897,7 +1917,7 @@ function PremiosAdmin({ vendors }) {
   useEffect(() => { recargar(); }, [recargar]);
 
   const nombreDe = (id) => (vendors.find((v) => v.id === id) || {}).nombre || "(vendedor borrado)";
-  const num = (t) => Number(String(t || "").replace(/[^0-9]/g, "")) || 0;
+  const num = parseMontoInput;
   const yaCargado = (vid) => (premios || []).some((p) => p.vendorId === vid && p.mes.toLowerCase() === mes.toLowerCase());
   const ordenados = [...vendors].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 
@@ -1935,13 +1955,13 @@ function PremiosAdmin({ vendors }) {
   const guardarEdicion = async (p) => {
     setErrL(""); setMsgL("");
     const nObj = num(editVals.objetivo), nEq = num(editVals.equipo);
-    if (nObj < p.usadoObjetivo) { setErrL(`Ya se aplicaron ${fmtMoney(p.usadoObjetivo)} del premio de objetivo: el nuevo monto no puede ser menor. Si te equivocaste, primero deshacé la aplicación (link "deshacer" en la columna Aplicado).`); return; }
-    if (nEq < p.usadoEquipo) { setErrL(`Ya se aplicaron ${fmtMoney(p.usadoEquipo)} del premio de equipo: el nuevo monto no puede ser menor. Si te equivocaste, primero deshacé la aplicación (link "deshacer" en la columna Aplicado).`); return; }
+    if (nObj < p.usadoObjetivo) { setErrL(`Ya se aplicaron ${fmtMoney2(p.usadoObjetivo)} del premio de objetivo: el nuevo monto no puede ser menor. Si te equivocaste, primero deshacé la aplicación (link "deshacer" en la columna Aplicado).`); return; }
+    if (nEq < p.usadoEquipo) { setErrL(`Ya se aplicaron ${fmtMoney2(p.usadoEquipo)} del premio de equipo: el nuevo monto no puede ser menor. Si te equivocaste, primero deshacé la aplicación (link "deshacer" en la columna Aplicado).`); return; }
     if (nObj === 0 && nEq === 0) { setErrL("Los dos montos están en 0. Si no corresponde premio, borralo."); return; }
     try {
       await db.updatePremioMontos(p, nObj, nEq);
       setEditId(null);
-      setMsgL(`Premio de ${nombreDe(p.vendorId)} (${p.mes}) corregido: objetivo ${fmtMoney(nObj)}, equipo ${nEq > 0 ? fmtMoney(nEq) : "–"}.`);
+      setMsgL(`Premio de ${nombreDe(p.vendorId)} (${p.mes}) corregido: objetivo ${fmtMoney2(nObj)}, equipo ${nEq > 0 ? fmtMoney2(nEq) : "–"}.`);
       await recargar();
     } catch (e) { setErrL("No se pudo corregir: " + e.message); }
   };
@@ -1950,7 +1970,7 @@ function PremiosAdmin({ vendors }) {
   const deshacerAplicacion = async (p, a) => {
     const v = vendors.find((x) => x.id === p.vendorId);
     const monto = a.montoObjetivo + a.montoEquipo;
-    if (!confirm(`¿Deshacer la aplicación de ${fmtMoney(monto)} del premio de ${nombreDe(p.vendorId)} (${p.mes}) en la rendición del ${a.fechaRendicion}?\n\nSe saca de la planilla (Transferencias y Observaciones) y el premio vuelve a quedar disponible para que el vendedor lo aplique de nuevo.`)) return;
+    if (!confirm(`¿Deshacer la aplicación de ${fmtMoney2(monto)} del premio de ${nombreDe(p.vendorId)} (${p.mes}) en la rendición del ${a.fechaRendicion}?\n\nSe saca de la planilla (Transferencias y Observaciones) y el premio vuelve a quedar disponible para que el vendedor lo aplique de nuevo.`)) return;
     setErrL(""); setMsgL(""); setDeshaciendo(a.id);
     let reserva = null;
     try {
@@ -1958,7 +1978,7 @@ function PremiosAdmin({ vendors }) {
       if (v && v.sheetUrl) {
         await sheets.deshacerPremioSheet(v.sheetUrl, { fecha: a.fechaRendicion, monto, mes: p.mes, objetivo: a.montoObjetivo > 0, equipo: a.montoEquipo > 0 });
       }
-      setMsgL(`Aplicación deshecha: ${fmtMoney(monto)} de ${nombreDe(p.vendorId)} volvieron a estar disponibles.`);
+      setMsgL(`Aplicación deshecha: ${fmtMoney2(monto)} de ${nombreDe(p.vendorId)} volvieron a estar disponibles.`);
     } catch (e) {
       if (reserva) { try { await db.restaurarAplicacionPremio(reserva); } catch (e2) { /* sigue */ } }
       setErrL("No se pudo deshacer: " + e.message);
@@ -1985,7 +2005,7 @@ function PremiosAdmin({ vendors }) {
           <div className="ec-field"><label>Mes</label>
             <select value={mesNombre} onChange={(e) => setMesNombre(e.target.value)}>{MESES_NOMBRE.map((m) => <option key={m} value={m}>{m}</option>)}</select>
           </div>
-          <div className="ec-field"><label>Año</label><input inputMode="numeric" value={anio} onChange={(e) => setAnio(e.target.value)} /></div>
+          <div className="ec-field"><label>Año</label><input inputMode="decimal" value={anio} onChange={(e) => setAnio(e.target.value)} /></div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="ec-table">
@@ -1998,8 +2018,8 @@ function PremiosAdmin({ vendors }) {
                     <td>{v.nombre}</td>
                     {cargado ? <td colSpan={2} style={{ color: TOKENS.textSoft }}>Ya cargado para {mes}</td> : (
                       <>
-                        <td><input style={{ width: 120 }} inputMode="numeric" placeholder="0" value={(vals[v.id] || {}).objetivo || ""} onChange={(e) => setVals({ ...vals, [v.id]: { ...(vals[v.id] || {}), objetivo: e.target.value } })} /></td>
-                        <td><input style={{ width: 120 }} inputMode="numeric" placeholder="0" value={(vals[v.id] || {}).equipo || ""} onChange={(e) => setVals({ ...vals, [v.id]: { ...(vals[v.id] || {}), equipo: e.target.value } })} /></td>
+                        <td><input style={{ width: 120 }} inputMode="decimal" placeholder="0" value={(vals[v.id] || {}).objetivo || ""} onChange={(e) => setVals({ ...vals, [v.id]: { ...(vals[v.id] || {}), objetivo: e.target.value } })} /></td>
+                        <td><input style={{ width: 120 }} inputMode="decimal" placeholder="0" value={(vals[v.id] || {}).equipo || ""} onChange={(e) => setVals({ ...vals, [v.id]: { ...(vals[v.id] || {}), equipo: e.target.value } })} /></td>
                       </>
                     )}
                   </tr>
@@ -2044,19 +2064,19 @@ function PremiosAdmin({ vendors }) {
                         <td>{p.mes}</td>
                         {editId === p.id ? (
                           <>
-                            <td><input style={{ width: 100 }} inputMode="numeric" value={editVals.objetivo} onChange={(e) => setEditVals({ ...editVals, objetivo: e.target.value })} /></td>
-                            <td><input style={{ width: 100 }} inputMode="numeric" placeholder="0" value={editVals.equipo} onChange={(e) => setEditVals({ ...editVals, equipo: e.target.value })} /></td>
+                            <td><input style={{ width: 100 }} inputMode="decimal" value={editVals.objetivo} onChange={(e) => setEditVals({ ...editVals, objetivo: e.target.value })} /></td>
+                            <td><input style={{ width: 100 }} inputMode="decimal" placeholder="0" value={editVals.equipo} onChange={(e) => setEditVals({ ...editVals, equipo: e.target.value })} /></td>
                           </>
                         ) : (
                           <>
-                            <td>{fmtMoney(p.objetivo)}</td>
-                            <td>{p.equipo > 0 ? fmtMoney(p.equipo) : "–"}</td>
+                            <td>{fmtMoney2(p.objetivo)}</td>
+                            <td>{p.equipo > 0 ? fmtMoney2(p.equipo) : "–"}</td>
                           </>
                         )}
                         <td>{estadoDe(p)}</td>
-                        <td>{usadoDe(p) > 0 ? fmtMoney(usadoDe(p)) : "–"}{aps.map((a) => (
+                        <td>{usadoDe(p) > 0 ? fmtMoney2(usadoDe(p)) : "–"}{aps.map((a) => (
                           <div key={a.id} style={{ fontSize: 11.5, color: TOKENS.textSoft }}>
-                            rendición {a.fechaRendicion}: {fmtMoney(a.montoObjetivo + a.montoEquipo)}{" "}
+                            rendición {a.fechaRendicion}: {fmtMoney2(a.montoObjetivo + a.montoEquipo)}{" "}
                             <button type="button" disabled={deshaciendo === a.id} onClick={() => deshacerAplicacion(p, a)} style={{ background: "none", border: "none", padding: 0, color: TOKENS.danger, textDecoration: "underline", cursor: "pointer", fontSize: 11.5 }}>
                               {deshaciendo === a.id ? "deshaciendo..." : "deshacer"}
                             </button>
@@ -2431,19 +2451,19 @@ function rendicionParaPremio(rendiciones) {
 
 // Reparte los premios disponibles (del más viejo al más nuevo) hasta el monto a rendir. Lo que sobra queda para la próxima.
 function planPremios(premios, aRendir) {
-  let tope = Math.max(aRendir, 0);
+  let tope = Math.max(Math.round(aRendir * 100) / 100, 0);
   let disponible = 0;
   const items = [];
   premios.forEach((p) => {
-    const dO = Math.max(p.objetivo - p.usadoObjetivo, 0);
-    const dE = Math.max(p.equipo - p.usadoEquipo, 0);
+    const dO = Math.max(Math.round((p.objetivo - p.usadoObjetivo) * 100) / 100, 0);
+    const dE = Math.max(Math.round((p.equipo - p.usadoEquipo) * 100) / 100, 0);
     disponible += dO + dE;
-    const mO = Math.min(dO, tope); tope -= mO;
-    const mE = Math.min(dE, tope); tope -= mE;
+    const mO = Math.min(dO, tope); tope = Math.round((tope - mO) * 100) / 100;
+    const mE = Math.min(dE, tope); tope = Math.round((tope - mE) * 100) / 100;
     if (mO + mE > 0) items.push({ premio: p, dO, dE, montoObjetivo: mO, montoEquipo: mE });
   });
   const total = items.reduce((s, i) => s + i.montoObjetivo + i.montoEquipo, 0);
-  return { items, total, restante: disponible - total };
+  return { items, total: Math.round(total * 100) / 100, restante: Math.round((disponible - total) * 100) / 100 };
 }
 
 // "Octubre 2026" -> "octubre" (con el año solo si no es el año actual).
@@ -2458,8 +2478,8 @@ function textoObservacionPremio(items) {
   const partes = [];
   items.forEach((i) => {
     const mes = String(i.premio.mes || "").toUpperCase();
-    if (i.montoObjetivo > 0) partes.push(`PREMIO OBJETIVO ${mes} ${fmtMoney(i.montoObjetivo)}`);
-    if (i.montoEquipo > 0) partes.push(`PREMIO EQUIPO ${mes} ${fmtMoney(i.montoEquipo)}`);
+    if (i.montoObjetivo > 0) partes.push(`PREMIO OBJETIVO ${mes} ${fmtMoney2(i.montoObjetivo)}`);
+    if (i.montoEquipo > 0) partes.push(`PREMIO EQUIPO ${mes} ${fmtMoney2(i.montoEquipo)}`);
   });
   return partes.join(" + ");
 }
@@ -2501,11 +2521,11 @@ function PremioAplicar({ vendor, rendiciones, onChanged }) {
 
   return (
     <>
-      {hecho && <div className="ec-note" style={{ background: "#E6F3EA", color: "#1E6B3C", fontWeight: 600, marginBottom: 12 }}>✓ Aplicamos tu premio de {fmtMoney(hecho.total)} a tu rendición del {hecho.fecha}.</div>}
+      {hecho && <div className="ec-note" style={{ background: "#E6F3EA", color: "#1E6B3C", fontWeight: 600, marginBottom: 12 }}>✓ Aplicamos tu premio de {fmtMoney2(hecho.total)} a tu rendición del {hecho.fecha}.</div>}
       {hayPremio && (
         <div style={{ background: "#FFF6E0", border: "1px solid #EBCB84", borderRadius: 10, padding: 14, marginBottom: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 14.5 }}><Trophy size={18} color={COLOR_PREMIO} /> Tenés un premio para aplicar</div>
-          <div style={{ fontSize: 24, fontWeight: 700, color: "#5C4207", margin: "6px 0 2px" }}>{fmtMoney(plan.total + plan.restante)}</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: "#5C4207", margin: "6px 0 2px" }}>{fmtMoney2(plan.total + plan.restante)}</div>
           <div style={{ fontSize: 12.5, color: "#7A5A12" }}>Se descuenta de tu rendición del {destino.fecha}</div>
           <button className="ec-btn" type="button" style={{ width: "100%", background: COLOR_PREMIO, color: "#fff", marginTop: 10, letterSpacing: 0.4 }} onClick={() => { setError(""); setAbierto(true); }}>APLICAR PREMIO</button>
         </div>
@@ -2517,12 +2537,12 @@ function PremioAplicar({ vendor, rendiciones, onChanged }) {
             <div className="ec-serif" style={{ fontSize: 22, fontWeight: 700, color: TOKENS.olive, margin: "6px 0 14px" }}>¡Felicitaciones!</div>
             {plan.items.map((it) => (
               <React.Fragment key={it.premio.id}>
-                {it.dO > 0 && <p style={{ margin: "0 0 10px", fontSize: 14, lineHeight: 1.45, textAlign: "left", background: TOKENS.cream, borderRadius: 8, padding: "10px 12px" }}>Tu premio por haber logrado el <b style={{ color: TOKENS.olive }}>objetivo del mes de {mesParaCartel(it.premio.mes)}</b> es de <b style={{ color: TOKENS.olive }}>{fmtMoney(it.dO)}</b>.</p>}
-                {it.dE > 0 && <p style={{ margin: "0 0 10px", fontSize: 14, lineHeight: 1.45, textAlign: "left", background: TOKENS.cream, borderRadius: 8, padding: "10px 12px" }}>Tu premio por <b style={{ color: TOKENS.olive }}>equipo del mes de {mesParaCartel(it.premio.mes)}</b> es de <b style={{ color: TOKENS.olive }}>{fmtMoney(it.dE)}</b>.</p>}
+                {it.dO > 0 && <p style={{ margin: "0 0 10px", fontSize: 14, lineHeight: 1.45, textAlign: "left", background: TOKENS.cream, borderRadius: 8, padding: "10px 12px" }}>Tu premio por haber logrado el <b style={{ color: TOKENS.olive }}>objetivo del mes de {mesParaCartel(it.premio.mes)}</b> es de <b style={{ color: TOKENS.olive }}>{fmtMoney2(it.dO)}</b>.</p>}
+                {it.dE > 0 && <p style={{ margin: "0 0 10px", fontSize: 14, lineHeight: 1.45, textAlign: "left", background: TOKENS.cream, borderRadius: 8, padding: "10px 12px" }}>Tu premio por <b style={{ color: TOKENS.olive }}>equipo del mes de {mesParaCartel(it.premio.mes)}</b> es de <b style={{ color: TOKENS.olive }}>{fmtMoney2(it.dE)}</b>.</p>}
               </React.Fragment>
             ))}
-            <div style={{ fontSize: 13, color: TOKENS.textSoft, margin: "4px 0 2px" }}>Se descuenta de tu rendición del {destino.fecha}: <b>{fmtMoney(plan.total)}</b>.</div>
-            {plan.restante > 0 && <div style={{ fontSize: 13, color: TOKENS.textSoft }}>Te quedan <b>{fmtMoney(plan.restante)}</b> para tu próxima rendición.</div>}
+            <div style={{ fontSize: 13, color: TOKENS.textSoft, margin: "4px 0 2px" }}>Se descuenta de tu rendición del {destino.fecha}: <b>{fmtMoney2(plan.total)}</b>.</div>
+            {plan.restante > 0 && <div style={{ fontSize: 13, color: TOKENS.textSoft }}>Te quedan <b>{fmtMoney2(plan.restante)}</b> para tu próxima rendición.</div>}
             <div style={{ fontSize: 14, margin: "12px 0 4px" }}>Gracias por el compromiso.</div>
             {error && <div className="ec-error" style={{ marginTop: 10, textAlign: "left" }}>{error}</div>}
             <button className="ec-btn" type="button" disabled={aplicando} style={{ width: "100%", background: COLOR_PREMIO, color: "#fff", marginTop: 12, letterSpacing: 0.4 }} onClick={aplicar}>
