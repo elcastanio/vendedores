@@ -144,6 +144,12 @@ export async function enviarComprobanteSheet({ vendedor, fechaRendicion, nombreA
   return llamar("enviarComprobante", { vendedor, fechaRendicion, nombreArchivo, mime, base64 });
 }
 
+// Aplica un premio a una rendición pendiente: suma en Transferencias y deja "PREMIO ..." en Observaciones.
+export async function aplicarPremioSheet(sheetUrl, { fecha, monto, observacion }) {
+  const sheetId = extraerSheetId(sheetUrl);
+  return llamar("aplicarPremio", { sheetId, fecha, monto, observacion });
+}
+
 // Manda por mail a administración el PDF de los términos y condiciones firmado por el vendedor.
 export async function enviarTerminosFirmadosSheet({ vendedor, version, nombreArchivo, base64 }) {
   return llamar("enviarTerminos", { vendedor, version, nombreArchivo, base64 });
