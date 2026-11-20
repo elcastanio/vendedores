@@ -150,6 +150,12 @@ export async function aplicarPremioSheet(sheetUrl, { fecha, monto, observacion }
   return llamar("aplicarPremio", { sheetId, fecha, monto, observacion });
 }
 
+// Deshace un premio ya aplicado: resta de Transferencias y saca el texto "PREMIO ..." de Observaciones.
+export async function deshacerPremioSheet(sheetUrl, { fecha, monto, mes, objetivo, equipo }) {
+  const sheetId = extraerSheetId(sheetUrl);
+  return llamar("deshacerPremio", { sheetId, fecha, monto, mes, objetivo: !!objetivo, equipo: !!equipo });
+}
+
 // Manda por mail a administración el PDF de los términos y condiciones firmado por el vendedor.
 export async function enviarTerminosFirmadosSheet({ vendedor, version, nombreArchivo, base64 }) {
   return llamar("enviarTerminos", { vendedor, version, nombreArchivo, base64 });
