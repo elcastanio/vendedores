@@ -333,6 +333,85 @@ export async function fetchTerminosTodos() {
   return (data || []).map(mapTerminos);
 }
 
+// ---------- PREMIOS (objetivo y equipo; se aplican a la próxima rendición) ----------
+
+function mapPremio(r) {
+  return {
+    id: r.id, vendorId: r.vendor_id, mes: r.mes,
+    objetivo: Number(r.objetivo) || 0, equipo: Number(r.equipo) || 0,
+    usadoObjetivo: Number(r.usado_objetivo) || 0, usadoEquipo: Number(r.usado_equipo) || 0,
+    habilitado: !!r.habilitado, creadoEn: r.creado_en,
+  };
+}
+
+// Todos los premios (para el admin), del más nuevo al más viejo.
+export async function fetchPremiosTodos() {
+  const { data, error } = await supabase.from("premios").select("*").order("creado_en", { ascending: false });
+  if (error) throw error;
+  return (data || []).map(mapPremio);
+}
+
+// Premios habilitados de un vendedor que todavía tienen algo para aplicar (del más viejo al más nuevo).
+export async function fetchPremiosDisponibles(vendorId) {
+  const { data, error } = await supabase.from("premios").select("*").eq("vendor_id", vendorId).eq("habilitado", true).order("creado_en", { ascending: true });
+  if (error) throw error;
+  return (data || []).map(mapPremio).filter((p) => p.objetivo - p.usadoObjetivo > 0 || p.equipo - p.usadoEquipo > 0);
+}
+
+// Crea varios premios de una vez: [{ vendorId, mes, objetivo, equipo }]. Quedan SIN habilitar.
+export async function addPremios(lista) {
+  const rows = lista.map((p) => ({ id: uid(), vendor_id: p.vendorId, mes: p.mes, objetivo: p.objetivo || 0, equipo: p.equipo || 0, habilitado: false }));
+  if (rows.length === 0) return [];
+  const { error } = await supabase.from("premios").insert(rows);
+  if (error) throw error;
+  return rows;
+}
+
+export async function setPremioHabilitado(ids, habilitado) {
+  const { error } = await supabase.from("premios").update({ habilitado }).in("id", ids);
+  if (error) throw error;
+}
+
+export async function deletePremio(id) {
+  const { error } = await supabase.from("premios").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// Historial de aplicaciones (para el admin).
+export async function fetchPremiosAplicaciones() {
+  const { data, error } = await supabase.from("premios_aplicaciones").select("*").order("aplicado_en", { ascending: false });
+  if (error) throw error;
+  return (data || []).map((r) => ({ id: r.id, premioId: r.premio_id, vendorId: r.vendor_id, fechaRendicion: r.fecha_rendicion, montoObjetivo: Number(r.monto_objetivo) || 0, montoEquipo: Number(r.monto_equipo) || 0, aplicadoEn: r.aplicado_en }));
+}
+
+// Descuenta del premio lo que se aplica a una rendición. Falla si el premio ya cambió (por ejemplo, doble toque),
+// para que nunca se aplique dos veces. Devuelve lo necesario para poder deshacerlo si falla la planilla.
+export async function reservarAplicacionPremio({ premio, montoObjetivo, montoEquipo, fechaRendicion }) {
+  const nuevoObj = premio.usadoObjetivo + montoObjetivo;
+  const nuevoEq = premio.usadoEquipo + montoEquipo;
+  const { data, error } = await supabase.from("premios")
+    .update({ usado_objetivo: nuevoObj, usado_equipo: nuevoEq })
+    .eq("id", premio.id).eq("usado_objetivo", premio.usadoObjetivo).eq("usado_equipo", premio.usadoEquipo).eq("habilitado", true)
+    .select("id");
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error("Este premio ya se aplicó o cambió. Recargá la pantalla.");
+  const apId = uid();
+  const { error: e2 } = await supabase.from("premios_aplicaciones").insert({
+    id: apId, premio_id: premio.id, vendor_id: premio.vendorId, fecha_rendicion: fechaRendicion, monto_objetivo: montoObjetivo, monto_equipo: montoEquipo,
+  });
+  if (e2) {
+    await supabase.from("premios").update({ usado_objetivo: premio.usadoObjetivo, usado_equipo: premio.usadoEquipo }).eq("id", premio.id);
+    throw e2;
+  }
+  return { premioId: premio.id, apId, usadoObjetivo: premio.usadoObjetivo, usadoEquipo: premio.usadoEquipo };
+}
+
+// Deshace una reserva (si no se pudo escribir en la planilla).
+export async function deshacerAplicacionPremio(reserva) {
+  await supabase.from("premios").update({ usado_objetivo: reserva.usadoObjetivo, usado_equipo: reserva.usadoEquipo }).eq("id", reserva.premioId);
+  await supabase.from("premios_aplicaciones").delete().eq("id", reserva.apId);
+}
+
 // ---------- CATÁLOGOS (PDFs que los vendedores descargan y comparten) ----------
 
 const BUCKET_CATALOGOS = "catalogos";
