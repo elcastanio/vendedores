@@ -420,6 +420,35 @@ export async function deshacerAplicacionPremio(reserva) {
   await supabase.from("premios_aplicaciones").delete().eq("id", reserva.apId);
 }
 
+// Quita una aplicación: el premio vuelve a tener disponible lo que se había aplicado. Con control para no pisar
+// un cambio simultáneo. Devuelve lo necesario para poder volver atrás si falla la planilla.
+export async function quitarAplicacionPremio(ap) {
+  const { data: pr, error: e0 } = await supabase.from("premios").select("*").eq("id", ap.premioId).maybeSingle();
+  if (e0) throw e0;
+  if (!pr) throw new Error("No se encontró el premio de esa aplicación.");
+  const uObj = Number(pr.usado_objetivo) || 0, uEq = Number(pr.usado_equipo) || 0;
+  const { data, error } = await supabase.from("premios")
+    .update({ usado_objetivo: Math.max(0, uObj - ap.montoObjetivo), usado_equipo: Math.max(0, uEq - ap.montoEquipo) })
+    .eq("id", ap.premioId).eq("usado_objetivo", pr.usado_objetivo).eq("usado_equipo", pr.usado_equipo).select("id");
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error("El premio cambió mientras lo deshacías. Recargá la pantalla y probá de nuevo.");
+  const { data: borradas, error: e2 } = await supabase.from("premios_aplicaciones").delete().eq("id", ap.id).select("id");
+  if (e2 || !borradas || borradas.length === 0) {
+    await supabase.from("premios").update({ usado_objetivo: pr.usado_objetivo, usado_equipo: pr.usado_equipo }).eq("id", ap.premioId);
+    throw e2 || new Error("Esa aplicación ya no existe. Recargá la pantalla.");
+  }
+  return { premioId: ap.premioId, usadoObjetivo: pr.usado_objetivo, usadoEquipo: pr.usado_equipo, ap };
+}
+
+// Vuelve atrás un quitarAplicacionPremio (si no se pudo escribir en la planilla).
+export async function restaurarAplicacionPremio(r) {
+  await supabase.from("premios").update({ usado_objetivo: r.usadoObjetivo, usado_equipo: r.usadoEquipo }).eq("id", r.premioId);
+  await supabase.from("premios_aplicaciones").insert({
+    id: r.ap.id, premio_id: r.ap.premioId, vendor_id: r.ap.vendorId, fecha_rendicion: r.ap.fechaRendicion,
+    monto_objetivo: r.ap.montoObjetivo, monto_equipo: r.ap.montoEquipo, aplicado_en: r.ap.aplicadoEn,
+  });
+}
+
 // ---------- CATÁLOGOS (PDFs que los vendedores descargan y comparten) ----------
 
 const BUCKET_CATALOGOS = "catalogos";
