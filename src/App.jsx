@@ -1935,8 +1935,8 @@ function PremiosAdmin({ vendors }) {
   const guardarEdicion = async (p) => {
     setErrL(""); setMsgL("");
     const nObj = num(editVals.objetivo), nEq = num(editVals.equipo);
-    if (nObj < p.usadoObjetivo) { setErrL(`Ya se aplicaron ${fmtMoney(p.usadoObjetivo)} del premio de objetivo: el nuevo monto no puede ser menor.`); return; }
-    if (nEq < p.usadoEquipo) { setErrL(`Ya se aplicaron ${fmtMoney(p.usadoEquipo)} del premio de equipo: el nuevo monto no puede ser menor.`); return; }
+    if (nObj < p.usadoObjetivo) { setErrL(`Ya se aplicaron ${fmtMoney(p.usadoObjetivo)} del premio de objetivo: el nuevo monto no puede ser menor. Si te equivocaste, primero deshacé la aplicación (link "deshacer" en la columna Aplicado).`); return; }
+    if (nEq < p.usadoEquipo) { setErrL(`Ya se aplicaron ${fmtMoney(p.usadoEquipo)} del premio de equipo: el nuevo monto no puede ser menor. Si te equivocaste, primero deshacé la aplicación (link "deshacer" en la columna Aplicado).`); return; }
     if (nObj === 0 && nEq === 0) { setErrL("Los dos montos están en 0. Si no corresponde premio, borralo."); return; }
     try {
       await db.updatePremioMontos(p, nObj, nEq);
@@ -1944,6 +1944,27 @@ function PremiosAdmin({ vendors }) {
       setMsgL(`Premio de ${nombreDe(p.vendorId)} (${p.mes}) corregido: objetivo ${fmtMoney(nObj)}, equipo ${nEq > 0 ? fmtMoney(nEq) : "–"}.`);
       await recargar();
     } catch (e) { setErrL("No se pudo corregir: " + e.message); }
+  };
+  // Deshace una aplicación: el premio vuelve a quedar disponible y se limpia la planilla del vendedor.
+  const [deshaciendo, setDeshaciendo] = useState(null);
+  const deshacerAplicacion = async (p, a) => {
+    const v = vendors.find((x) => x.id === p.vendorId);
+    const monto = a.montoObjetivo + a.montoEquipo;
+    if (!confirm(`¿Deshacer la aplicación de ${fmtMoney(monto)} del premio de ${nombreDe(p.vendorId)} (${p.mes}) en la rendición del ${a.fechaRendicion}?\n\nSe saca de la planilla (Transferencias y Observaciones) y el premio vuelve a quedar disponible para que el vendedor lo aplique de nuevo.`)) return;
+    setErrL(""); setMsgL(""); setDeshaciendo(a.id);
+    let reserva = null;
+    try {
+      reserva = await db.quitarAplicacionPremio(a);
+      if (v && v.sheetUrl) {
+        await sheets.deshacerPremioSheet(v.sheetUrl, { fecha: a.fechaRendicion, monto, mes: p.mes, objetivo: a.montoObjetivo > 0, equipo: a.montoEquipo > 0 });
+      }
+      setMsgL(`Aplicación deshecha: ${fmtMoney(monto)} de ${nombreDe(p.vendorId)} volvieron a estar disponibles.`);
+    } catch (e) {
+      if (reserva) { try { await db.restaurarAplicacionPremio(reserva); } catch (e2) { /* sigue */ } }
+      setErrL("No se pudo deshacer: " + e.message);
+    }
+    setDeshaciendo(null);
+    await recargar();
   };
   const borrar = async (p) => {
     if (!confirm(`¿Borrar el premio de ${nombreDe(p.vendorId)} (${p.mes})?`)) return;
@@ -2033,7 +2054,14 @@ function PremiosAdmin({ vendors }) {
                           </>
                         )}
                         <td>{estadoDe(p)}</td>
-                        <td>{usadoDe(p) > 0 ? fmtMoney(usadoDe(p)) : "–"}{aps.map((a) => <div key={a.id} style={{ fontSize: 11.5, color: TOKENS.textSoft }}>rendición {a.fechaRendicion}: {fmtMoney(a.montoObjetivo + a.montoEquipo)}</div>)}</td>
+                        <td>{usadoDe(p) > 0 ? fmtMoney(usadoDe(p)) : "–"}{aps.map((a) => (
+                          <div key={a.id} style={{ fontSize: 11.5, color: TOKENS.textSoft }}>
+                            rendición {a.fechaRendicion}: {fmtMoney(a.montoObjetivo + a.montoEquipo)}{" "}
+                            <button type="button" disabled={deshaciendo === a.id} onClick={() => deshacerAplicacion(p, a)} style={{ background: "none", border: "none", padding: 0, color: TOKENS.danger, textDecoration: "underline", cursor: "pointer", fontSize: 11.5 }}>
+                              {deshaciendo === a.id ? "deshaciendo..." : "deshacer"}
+                            </button>
+                          </div>
+                        ))}</td>
                         <td style={{ whiteSpace: "nowrap" }}>
                           {editId === p.id ? (
                             <>
@@ -2510,6 +2538,7 @@ function PremioAplicar({ vendor, rendiciones, onChanged }) {
 function RendicionesTab({ vendor, rendiciones, error, onChanged }) {
   // Comprobantes ya enviados (para no dejar adjuntar dos veces el de la misma rendición).
   const [comprobantes, setComprobantes] = useState({});
+  const [abiertas, setAbiertas] = useState({}); // rendiciones desplegadas (por fecha)
   useEffect(() => {
     let vivo = true;
     sheets.fetchComprobantesSheet({ vendedor: vendor.nombre }).then((m) => { if (vivo) setComprobantes(m); }).catch(() => {});
@@ -2548,20 +2577,36 @@ function RendicionesTab({ vendor, rendiciones, error, onChanged }) {
         rendiciones.map((r, i) => {
           const m = String(r.fecha || "").match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
           return { r, orden: m ? Number(m[3]) * 10000 + Number(m[2]) * 100 + Number(m[1]) : 0, i };
-        }).sort((x, y) => y.orden - x.orden || y.i - x.i).map(({ r, i }) => (
-          <div className="ec-pedido-row" key={i}>
-            <div className="ec-pedido-top">
-              <div><div className="ec-pedido-cliente">{r.fecha}</div><div className="ec-pedido-meta">Vendido {r.totalVendido} · Comisión {r.comision}</div></div>
-              {estadoDePago(r)}
+        }).sort((x, y) => y.orden - x.orden || y.i - x.i).map(({ r, i }) => {
+          const abierta = !!abiertas[i];
+          const pagada = String(r.montoPagado || "").trim() !== "";
+          return (
+            <div className="ec-pedido-row" key={i}>
+              <button type="button" aria-expanded={abierta} onClick={() => setAbiertas((o) => ({ ...o, [i]: !o[i] }))}
+                style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: 8, background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", font: "inherit", color: "inherit" }}>
+                <div>
+                  <div className="ec-pedido-cliente">{r.fecha}</div>
+                  <div className="ec-pedido-meta">{pagada ? `Pagado ${r.montoPagado}` : `A rendir ${r.aRendir}`}</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {estadoDePago(r)}
+                  <ChevronRight size={16} style={{ transform: abierta ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
+                </div>
+              </button>
+              {abierta && (
+                <div style={{ marginTop: 10 }}>
+                  <div className="ec-pedido-meta" style={{ marginBottom: 6 }}>Vendido {r.totalVendido} · Comisión {r.comision}</div>
+                  <div className="ec-linea"><span>Transferencias</span><span>{r.transferencias}</span></div>
+                  <div className="ec-linea"><span>Envío</span><span>{r.envio}</span></div>
+                  <div className="ec-subtotal"><span>A rendir</span><span>{r.aRendir}</span></div>
+                  {r.montoPagado && <div className="ec-note">Pagado: {r.montoPagado} {r.fechaPago ? `el ${r.fechaPago}` : ""}</div>}
+                  {r.observaciones && <div className="ec-note">{r.observaciones}</div>}
+                  {!pagada && <BotonComprobante vendor={vendor} rendicion={r} enviadoEl={comprobantes[r.fecha]} onEnviado={(f, d) => setComprobantes((c) => ({ ...c, [f]: d }))} />}
+                </div>
+              )}
             </div>
-            <div className="ec-linea"><span>Transferencias</span><span>{r.transferencias}</span></div>
-            <div className="ec-linea"><span>Envío</span><span>{r.envio}</span></div>
-            <div className="ec-subtotal"><span>A rendir</span><span>{r.aRendir}</span></div>
-            {r.montoPagado && <div className="ec-note">Pagado: {r.montoPagado} {r.fechaPago ? `el ${r.fechaPago}` : ""}</div>}
-            {r.observaciones && <div className="ec-note">{r.observaciones}</div>}
-            {String(r.montoPagado || "").trim() === "" && <BotonComprobante vendor={vendor} rendicion={r} enviadoEl={comprobantes[r.fecha]} onEnviado={(f, d) => setComprobantes((c) => ({ ...c, [f]: d }))} />}
-          </div>
-        ))
+          );
+        })
       )}
     </>
   );
