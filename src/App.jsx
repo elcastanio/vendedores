@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import {
   ClipboardList, Target, Package, Wallet, LogOut, Plus, Check, X, Loader2,
   ShieldCheck, Users, Boxes, ListChecks, ChevronRight, AlertTriangle, Upload,
-  ExternalLink, RefreshCw, Bell, BellOff, Pencil, FileDown, Printer, Trash2, Search, BookOpen,
+  ExternalLink, RefreshCw, Bell, BellOff, Pencil, FileDown, Printer, Trash2, Search, BookOpen, Trophy,
 } from "lucide-react";
 import * as db from "./db";
 import * as sheets from "./sheetsClient";
@@ -1866,6 +1866,160 @@ function TerminosAdmin({ vendors }) {
   );
 }
 
+// ---------- PREMIOS (admin): se cargan por mes y se habilitan cuando corresponde ----------
+
+const MESES_NOMBRE = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+function PremiosAdmin({ vendors }) {
+  const hoy = new Date();
+  const ant = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1); // por defecto, el mes anterior
+  const [mesNombre, setMesNombre] = useState(MESES_NOMBRE[ant.getMonth()]);
+  const [anio, setAnio] = useState(String(ant.getFullYear()));
+  const [vals, setVals] = useState({});
+  const [premios, setPremios] = useState(null);
+  const [aplic, setAplic] = useState([]);
+  const [filtro, setFiltro] = useState("");
+  const [error, setError] = useState("");
+  const [msg, setMsg] = useState("");
+  const [guardando, setGuardando] = useState(false);
+
+  const mes = `${mesNombre} ${anio.trim()}`;
+  const recargar = useCallback(async () => {
+    try {
+      const [p, a] = await Promise.all([db.fetchPremiosTodos(), db.fetchPremiosAplicaciones()]);
+      setPremios(p); setAplic(a);
+    } catch (e) { setError("No se pudieron leer los premios: " + e.message + ". ¿Corriste agregar-premios.sql en Supabase?"); setPremios([]); }
+  }, []);
+  useEffect(() => { recargar(); }, [recargar]);
+
+  const nombreDe = (id) => (vendors.find((v) => v.id === id) || {}).nombre || "(vendedor borrado)";
+  const num = (t) => Number(String(t || "").replace(/[^0-9]/g, "")) || 0;
+  const yaCargado = (vid) => (premios || []).some((p) => p.vendorId === vid && p.mes.toLowerCase() === mes.toLowerCase());
+  const ordenados = [...vendors].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+
+  const guardar = async () => {
+    setError(""); setMsg("");
+    if (!/^\d{4}$/.test(anio.trim())) { setError("Poné el año con 4 números."); return; }
+    const lista = ordenados.filter((v) => !yaCargado(v.id))
+      .map((v) => ({ vendorId: v.id, mes, objetivo: num((vals[v.id] || {}).objetivo), equipo: num((vals[v.id] || {}).equipo) }))
+      .filter((x) => x.objetivo > 0 || x.equipo > 0);
+    if (lista.length === 0) { setError("No hay montos nuevos para guardar."); return; }
+    setGuardando(true);
+    try {
+      await db.addPremios(lista);
+      setVals({});
+      setMsg(`Se cargaron ${lista.length} premios de ${mes}. Quedan sin habilitar: habilitalos abajo cuando corresponda.`);
+      await recargar();
+      setFiltro(mes);
+    } catch (e) { setError("No se pudo guardar: " + e.message); }
+    setGuardando(false);
+  };
+
+  const totalDe = (p) => p.objetivo + p.equipo;
+  const usadoDe = (p) => p.usadoObjetivo + p.usadoEquipo;
+  const estadoDe = (p) => {
+    if (usadoDe(p) >= totalDe(p)) return "Aplicado";
+    if (p.habilitado) return usadoDe(p) > 0 ? "Habilitado · aplicado en parte" : "Habilitado";
+    return "Cargado (sin habilitar)";
+  };
+  const cambiarHabilitado = async (ids, valor) => {
+    setError(""); setMsg("");
+    try { await db.setPremioHabilitado(ids, valor); await recargar(); } catch (e) { setError("No se pudo cambiar: " + e.message); }
+  };
+  const borrar = async (p) => {
+    if (!confirm(`¿Borrar el premio de ${nombreDe(p.vendorId)} (${p.mes})?`)) return;
+    try { await db.deletePremio(p.id); await recargar(); } catch (e) { setError("No se pudo borrar: " + e.message); }
+  };
+
+  const meses = [...new Set((premios || []).map((p) => p.mes))];
+  const visibles = (premios || []).filter((p) => !filtro || p.mes === filtro);
+  const paraHabilitar = visibles.filter((p) => !p.habilitado && usadoDe(p) < totalDe(p));
+
+  return (
+    <>
+      <div className="ec-card">
+        <h3><Trophy size={16} /> Cargar premios del mes</h3>
+        <div className="ec-sub" style={{ marginBottom: 12 }}>Poné los montos de cada vendedor. Si no tiene equipo o no cumplió, dejalo vacío o en 0. Al guardar quedan sin habilitar: el vendedor los ve cuando los habilitás.</div>
+        <div className="ec-row2">
+          <div className="ec-field"><label>Mes</label>
+            <select value={mesNombre} onChange={(e) => setMesNombre(e.target.value)}>{MESES_NOMBRE.map((m) => <option key={m} value={m}>{m}</option>)}</select>
+          </div>
+          <div className="ec-field"><label>Año</label><input inputMode="numeric" value={anio} onChange={(e) => setAnio(e.target.value)} /></div>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="ec-table">
+            <thead><tr><th>Vendedor</th><th>Premio objetivo ($)</th><th>Premio equipo ($)</th></tr></thead>
+            <tbody>
+              {ordenados.map((v) => {
+                const cargado = yaCargado(v.id);
+                return (
+                  <tr key={v.id}>
+                    <td>{v.nombre}</td>
+                    {cargado ? <td colSpan={2} style={{ color: TOKENS.textSoft }}>Ya cargado para {mes}</td> : (
+                      <>
+                        <td><input style={{ width: 120 }} inputMode="numeric" placeholder="0" value={(vals[v.id] || {}).objetivo || ""} onChange={(e) => setVals({ ...vals, [v.id]: { ...(vals[v.id] || {}), objetivo: e.target.value } })} /></td>
+                        <td><input style={{ width: 120 }} inputMode="numeric" placeholder="0" value={(vals[v.id] || {}).equipo || ""} onChange={(e) => setVals({ ...vals, [v.id]: { ...(vals[v.id] || {}), equipo: e.target.value } })} /></td>
+                      </>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {error && <div className="ec-error" style={{ marginTop: 10 }}>{error}</div>}
+        {msg && <div className="ec-ok">{msg}</div>}
+        <button className="ec-btn ec-btn-primary" type="button" disabled={guardando} style={{ marginTop: 12 }} onClick={guardar}>
+          {guardando ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : <Check size={15} />} Guardar premios
+        </button>
+      </div>
+
+      <div className="ec-card">
+        <h3><Trophy size={16} /> Premios cargados</h3>
+        {premios === null ? <Spinner label="Cargando..." /> : premios.length === 0 ? <div className="ec-empty">Todavía no hay premios cargados.</div> : (
+          <>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+              <select value={filtro} onChange={(e) => setFiltro(e.target.value)}>
+                <option value="">Todos los meses</option>
+                {meses.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+              {paraHabilitar.length > 0 && (
+                <button className="ec-btn ec-btn-primary" type="button" onClick={() => { if (confirm(`¿Habilitar ${paraHabilitar.length} premios? Los vendedores los van a ver y podrán aplicarlos.`)) cambiarHabilitado(paraHabilitar.map((p) => p.id), true); }}>
+                  Habilitar todos los cargados ({paraHabilitar.length})
+                </button>
+              )}
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table className="ec-table">
+                <thead><tr><th>Vendedor</th><th>Mes</th><th>Objetivo</th><th>Equipo</th><th>Estado</th><th>Aplicado</th><th></th></tr></thead>
+                <tbody>
+                  {visibles.map((p) => {
+                    const aps = aplic.filter((a) => a.premioId === p.id);
+                    return (
+                      <tr key={p.id}>
+                        <td>{nombreDe(p.vendorId)}</td>
+                        <td>{p.mes}</td>
+                        <td>{fmtMoney(p.objetivo)}</td>
+                        <td>{p.equipo > 0 ? fmtMoney(p.equipo) : "–"}</td>
+                        <td>{estadoDe(p)}</td>
+                        <td>{usadoDe(p) > 0 ? fmtMoney(usadoDe(p)) : "–"}{aps.map((a) => <div key={a.id} style={{ fontSize: 11.5, color: TOKENS.textSoft }}>rendición {a.fechaRendicion}: {fmtMoney(a.montoObjetivo + a.montoEquipo)}</div>)}</td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          {usadoDe(p) < totalDe(p) && <button className="ec-btn ec-btn-ghost" type="button" onClick={() => cambiarHabilitado([p.id], !p.habilitado)}>{p.habilitado ? "Deshabilitar" : "Habilitar"}</button>}{" "}
+                          {usadoDe(p) === 0 && <button className="ec-btn ec-btn-ghost" type="button" aria-label="Borrar premio" onClick={() => borrar(p)}><Trash2 size={13} /></button>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
 // Muestra un valor de la solapa Equipo tal cual viene: si es un número, con
 // formato de plata; si es texto ("–", "OBJETIVO LOGRADO 👏", etc.), tal cual.
 function valorEquipo(v) {
@@ -2152,6 +2306,139 @@ function BotonComprobante({ vendor, rendicion, enviadoEl, onEnviado }) {
   );
 }
 
+// ---------- PREMIOS: el vendedor los aplica a su próxima rendición pendiente ----------
+
+const COLOR_PREMIO = "#C8891B";
+
+// "$ 765.000" -> 765000 (las planillas muestran montos sin decimales).
+function montoDeTexto(t) {
+  const s = String(t || "");
+  const n = Number(s.replace(/[^0-9]/g, "")) || 0;
+  return /-/.test(s) ? -n : n;
+}
+function ordenDeFecha(txt) {
+  const m = String(txt || "").match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  return m ? Number(m[3]) * 10000 + Number(m[2]) * 100 + Number(m[1]) : 0;
+}
+
+// La rendición a la que se aplica el premio: la pendiente más vieja (sin pago ni estado) que tenga algo para rendir.
+function rendicionParaPremio(rendiciones) {
+  const pendientes = (rendiciones || []).filter((r) => {
+    if (String(r.montoPagado || "").trim() !== "") return false;
+    if (String(r.estadoColor || "").trim() !== "") return false;
+    if (/^\s*(reca|mp)\s*$/i.test(String(r.estado || ""))) return false;
+    return montoDeTexto(r.aRendir) > 0;
+  });
+  pendientes.sort((a, b) => ordenDeFecha(a.fecha) - ordenDeFecha(b.fecha));
+  return pendientes[0] || null;
+}
+
+// Reparte los premios disponibles (del más viejo al más nuevo) hasta el monto a rendir. Lo que sobra queda para la próxima.
+function planPremios(premios, aRendir) {
+  let tope = Math.max(aRendir, 0);
+  let disponible = 0;
+  const items = [];
+  premios.forEach((p) => {
+    const dO = Math.max(p.objetivo - p.usadoObjetivo, 0);
+    const dE = Math.max(p.equipo - p.usadoEquipo, 0);
+    disponible += dO + dE;
+    const mO = Math.min(dO, tope); tope -= mO;
+    const mE = Math.min(dE, tope); tope -= mE;
+    if (mO + mE > 0) items.push({ premio: p, dO, dE, montoObjetivo: mO, montoEquipo: mE });
+  });
+  const total = items.reduce((s, i) => s + i.montoObjetivo + i.montoEquipo, 0);
+  return { items, total, restante: disponible - total };
+}
+
+// "Octubre 2026" -> "octubre" (con el año solo si no es el año actual).
+function mesParaCartel(mes) {
+  const partes = String(mes || "").trim().split(/\s+/);
+  if (partes.length > 1 && partes[partes.length - 1] === fechaHoy().slice(0, 4)) partes.pop();
+  return partes.join(" ").toLowerCase();
+}
+
+// Texto que queda en OBSERVACIONES de la planilla. Lo que está en 0 no aparece.
+function textoObservacionPremio(items) {
+  const partes = [];
+  items.forEach((i) => {
+    const mes = String(i.premio.mes || "").toUpperCase();
+    if (i.montoObjetivo > 0) partes.push(`PREMIO OBJETIVO ${mes} ${fmtMoney(i.montoObjetivo)}`);
+    if (i.montoEquipo > 0) partes.push(`PREMIO EQUIPO ${mes} ${fmtMoney(i.montoEquipo)}`);
+  });
+  return partes.join(" + ");
+}
+
+function PremioAplicar({ vendor, rendiciones, onChanged }) {
+  const [premios, setPremios] = useState([]);
+  const [abierto, setAbierto] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [error, setError] = useState("");
+  const [hecho, setHecho] = useState(null);
+
+  const cargar = useCallback(() => db.fetchPremiosDisponibles(vendor.id).then(setPremios).catch(() => setPremios([])), [vendor.id]);
+  useEffect(() => { cargar(); }, [cargar, rendiciones]);
+
+  const destino = rendicionParaPremio(rendiciones);
+  const plan = destino && premios.length > 0 ? planPremios(premios, montoDeTexto(destino.aRendir)) : null;
+  const hayPremio = plan && plan.items.length > 0;
+
+  const aplicar = async () => {
+    if (!hayPremio || aplicando) return;
+    setAplicando(true); setError("");
+    const reservas = [];
+    try {
+      // Primero se descuenta del premio (con control para que nunca se aplique dos veces) y después se escribe en la planilla.
+      for (const it of plan.items) {
+        reservas.push(await db.reservarAplicacionPremio({ premio: it.premio, montoObjetivo: it.montoObjetivo, montoEquipo: it.montoEquipo, fechaRendicion: destino.fecha }));
+      }
+      await sheets.aplicarPremioSheet(vendor.sheetUrl, { fecha: destino.fecha, monto: plan.total, observacion: textoObservacionPremio(plan.items) });
+      setHecho({ total: plan.total, fecha: destino.fecha });
+      setAbierto(false);
+      await cargar();
+      if (onChanged) onChanged();
+    } catch (e) {
+      for (const r of reservas) { try { await db.deshacerAplicacionPremio(r); } catch (e2) { /* sigue */ } }
+      setError("No se pudo aplicar el premio: " + e.message);
+    }
+    setAplicando(false);
+  };
+
+  return (
+    <>
+      {hecho && <div className="ec-note" style={{ background: "#E6F3EA", color: "#1E6B3C", fontWeight: 600, marginBottom: 12 }}>✓ Aplicamos tu premio de {fmtMoney(hecho.total)} a tu rendición del {hecho.fecha}.</div>}
+      {hayPremio && (
+        <div style={{ background: "#FFF6E0", border: "1px solid #EBCB84", borderRadius: 10, padding: 14, marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 14.5 }}><Trophy size={18} color={COLOR_PREMIO} /> Tenés un premio para aplicar</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: "#5C4207", margin: "6px 0 2px" }}>{fmtMoney(plan.total + plan.restante)}</div>
+          <div style={{ fontSize: 12.5, color: "#7A5A12" }}>Se descuenta de tu rendición del {destino.fecha}</div>
+          <button className="ec-btn" type="button" style={{ width: "100%", background: COLOR_PREMIO, color: "#fff", marginTop: 10, letterSpacing: 0.4 }} onClick={() => { setError(""); setAbierto(true); }}>APLICAR PREMIO</button>
+        </div>
+      )}
+      {abierto && hayPremio && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(20,37,58,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
+          <div role="dialog" aria-modal="true" style={{ background: "#fff", borderRadius: 14, padding: "24px 18px 18px", width: "100%", maxWidth: 380, maxHeight: "90vh", overflowY: "auto", textAlign: "center" }}>
+            <Trophy size={44} color={COLOR_PREMIO} />
+            <div className="ec-serif" style={{ fontSize: 22, fontWeight: 700, color: TOKENS.olive, margin: "6px 0 14px" }}>¡Felicitaciones!</div>
+            {plan.items.map((it) => (
+              <React.Fragment key={it.premio.id}>
+                {it.dO > 0 && <p style={{ margin: "0 0 10px", fontSize: 14, lineHeight: 1.45, textAlign: "left", background: TOKENS.cream, borderRadius: 8, padding: "10px 12px" }}>Tu premio por haber logrado el <b style={{ color: TOKENS.olive }}>objetivo del mes de {mesParaCartel(it.premio.mes)}</b> es de <b style={{ color: TOKENS.olive }}>{fmtMoney(it.dO)}</b>.</p>}
+                {it.dE > 0 && <p style={{ margin: "0 0 10px", fontSize: 14, lineHeight: 1.45, textAlign: "left", background: TOKENS.cream, borderRadius: 8, padding: "10px 12px" }}>Tu premio por <b style={{ color: TOKENS.olive }}>equipo del mes de {mesParaCartel(it.premio.mes)}</b> es de <b style={{ color: TOKENS.olive }}>{fmtMoney(it.dE)}</b>.</p>}
+              </React.Fragment>
+            ))}
+            <div style={{ fontSize: 13, color: TOKENS.textSoft, margin: "4px 0 2px" }}>Se descuenta de tu rendición del {destino.fecha}: <b>{fmtMoney(plan.total)}</b>.</div>
+            {plan.restante > 0 && <div style={{ fontSize: 13, color: TOKENS.textSoft }}>Te quedan <b>{fmtMoney(plan.restante)}</b> para tu próxima rendición.</div>}
+            <div style={{ fontSize: 14, margin: "12px 0 4px" }}>Gracias por el compromiso.</div>
+            {error && <div className="ec-error" style={{ marginTop: 10, textAlign: "left" }}>{error}</div>}
+            <button className="ec-btn" type="button" disabled={aplicando} style={{ width: "100%", background: COLOR_PREMIO, color: "#fff", marginTop: 12, letterSpacing: 0.4 }} onClick={aplicar}>
+              {aplicando ? <Loader2 size={15} style={{ animation: "spin 0.9s linear infinite" }} /> : null} CERRAR
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function RendicionesTab({ vendor, rendiciones, error, onChanged }) {
   // Comprobantes ya enviados (para no dejar adjuntar dos veces el de la misma rendición).
   const [comprobantes, setComprobantes] = useState({});
@@ -2181,6 +2468,7 @@ function RendicionesTab({ vendor, rendiciones, error, onChanged }) {
 
   return (
     <>
+      <PremioAplicar vendor={vendor} rendiciones={rendiciones} onChanged={onChanged} />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: TOKENS.textSoft }}>HISTORIAL DE RENDICIONES</span>
         <BotonRecargar onClick={onChanged} />
@@ -2227,6 +2515,7 @@ function AdminApp({ vendors, products, onLogout, refreshVendors, refreshProducts
         {!soloPedidos && <button className={`ec-admin-tab ${tab === "objetivos" ? "active" : ""}`} onClick={() => setTab("objetivos")}><Target size={14} /> Objetivos</button>}
         <button className={`ec-admin-tab ${tab === "pedidos" ? "active" : ""}`} onClick={() => setTab("pedidos")}><ListChecks size={14} /> Pedidos</button>
         {!soloPedidos && <button className={`ec-admin-tab ${tab === "catalogos" ? "active" : ""}`} onClick={() => setTab("catalogos")}><BookOpen size={14} /> Catálogos</button>}
+        {!soloPedidos && <button className={`ec-admin-tab ${tab === "premios" ? "active" : ""}`} onClick={() => setTab("premios")}><Trophy size={14} /> Premios</button>}
         {!soloPedidos && <button className={`ec-admin-tab ${tab === "terminos" ? "active" : ""}`} onClick={() => setTab("terminos")}><ShieldCheck size={14} /> Términos</button>}
       </div>
       <div className="ec-content" style={{ paddingBottom: 40 }}>
@@ -2235,6 +2524,7 @@ function AdminApp({ vendors, products, onLogout, refreshVendors, refreshProducts
         {!soloPedidos && tab === "objetivos" && <ObjetivosAdmin vendors={vendors} />}
         {tab === "pedidos" && <PedidosAdmin vendors={vendors} />}
         {!soloPedidos && tab === "catalogos" && <CatalogosAdmin />}
+        {!soloPedidos && tab === "premios" && <PremiosAdmin vendors={vendors} />}
         {!soloPedidos && tab === "terminos" && <TerminosAdmin vendors={vendors} />}
       </div>
     </div>
