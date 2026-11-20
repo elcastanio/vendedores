@@ -1882,6 +1882,10 @@ function PremiosAdmin({ vendors }) {
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [editVals, setEditVals] = useState({ objetivo: "", equipo: "" });
+  const [errL, setErrL] = useState("");
+  const [msgL, setMsgL] = useState("");
 
   const mes = `${mesNombre} ${anio.trim()}`;
   const recargar = useCallback(async () => {
@@ -1922,13 +1926,29 @@ function PremiosAdmin({ vendors }) {
     if (p.habilitado) return usadoDe(p) > 0 ? "Habilitado · aplicado en parte" : "Habilitado";
     return "Cargado (sin habilitar)";
   };
+  // Los avisos de la tabla de abajo (habilitar, editar, borrar) se muestran en esa misma tabla.
   const cambiarHabilitado = async (ids, valor) => {
-    setError(""); setMsg("");
-    try { await db.setPremioHabilitado(ids, valor); await recargar(); } catch (e) { setError("No se pudo cambiar: " + e.message); }
+    setErrL(""); setMsgL("");
+    try { await db.setPremioHabilitado(ids, valor); await recargar(); } catch (e) { setErrL("No se pudo cambiar: " + e.message); }
+  };
+  const empezarEdicion = (p) => { setErrL(""); setMsgL(""); setEditId(p.id); setEditVals({ objetivo: String(p.objetivo || ""), equipo: String(p.equipo || "") }); };
+  const guardarEdicion = async (p) => {
+    setErrL(""); setMsgL("");
+    const nObj = num(editVals.objetivo), nEq = num(editVals.equipo);
+    if (nObj < p.usadoObjetivo) { setErrL(`Ya se aplicaron ${fmtMoney(p.usadoObjetivo)} del premio de objetivo: el nuevo monto no puede ser menor.`); return; }
+    if (nEq < p.usadoEquipo) { setErrL(`Ya se aplicaron ${fmtMoney(p.usadoEquipo)} del premio de equipo: el nuevo monto no puede ser menor.`); return; }
+    if (nObj === 0 && nEq === 0) { setErrL("Los dos montos están en 0. Si no corresponde premio, borralo."); return; }
+    try {
+      await db.updatePremioMontos(p, nObj, nEq);
+      setEditId(null);
+      setMsgL(`Premio de ${nombreDe(p.vendorId)} (${p.mes}) corregido: objetivo ${fmtMoney(nObj)}, equipo ${nEq > 0 ? fmtMoney(nEq) : "–"}.`);
+      await recargar();
+    } catch (e) { setErrL("No se pudo corregir: " + e.message); }
   };
   const borrar = async (p) => {
     if (!confirm(`¿Borrar el premio de ${nombreDe(p.vendorId)} (${p.mes})?`)) return;
-    try { await db.deletePremio(p.id); await recargar(); } catch (e) { setError("No se pudo borrar: " + e.message); }
+    setErrL(""); setMsgL("");
+    try { await db.deletePremio(p.id); await recargar(); } catch (e) { setErrL("No se pudo borrar: " + e.message); }
   };
 
   const meses = [...new Set((premios || []).map((p) => p.mes))];
@@ -1976,6 +1996,8 @@ function PremiosAdmin({ vendors }) {
 
       <div className="ec-card">
         <h3><Trophy size={16} /> Premios cargados</h3>
+        {errL && <div className="ec-error" style={{ marginBottom: 10 }}>{errL}</div>}
+        {msgL && <div className="ec-ok" style={{ marginBottom: 10 }}>{msgL}</div>}
         {premios === null ? <Spinner label="Cargando..." /> : premios.length === 0 ? <div className="ec-empty">Todavía no hay premios cargados.</div> : (
           <>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
@@ -1999,13 +2021,32 @@ function PremiosAdmin({ vendors }) {
                       <tr key={p.id}>
                         <td>{nombreDe(p.vendorId)}</td>
                         <td>{p.mes}</td>
-                        <td>{fmtMoney(p.objetivo)}</td>
-                        <td>{p.equipo > 0 ? fmtMoney(p.equipo) : "–"}</td>
+                        {editId === p.id ? (
+                          <>
+                            <td><input style={{ width: 100 }} inputMode="numeric" value={editVals.objetivo} onChange={(e) => setEditVals({ ...editVals, objetivo: e.target.value })} /></td>
+                            <td><input style={{ width: 100 }} inputMode="numeric" placeholder="0" value={editVals.equipo} onChange={(e) => setEditVals({ ...editVals, equipo: e.target.value })} /></td>
+                          </>
+                        ) : (
+                          <>
+                            <td>{fmtMoney(p.objetivo)}</td>
+                            <td>{p.equipo > 0 ? fmtMoney(p.equipo) : "–"}</td>
+                          </>
+                        )}
                         <td>{estadoDe(p)}</td>
                         <td>{usadoDe(p) > 0 ? fmtMoney(usadoDe(p)) : "–"}{aps.map((a) => <div key={a.id} style={{ fontSize: 11.5, color: TOKENS.textSoft }}>rendición {a.fechaRendicion}: {fmtMoney(a.montoObjetivo + a.montoEquipo)}</div>)}</td>
                         <td style={{ whiteSpace: "nowrap" }}>
-                          {usadoDe(p) < totalDe(p) && <button className="ec-btn ec-btn-ghost" type="button" onClick={() => cambiarHabilitado([p.id], !p.habilitado)}>{p.habilitado ? "Deshabilitar" : "Habilitar"}</button>}{" "}
-                          {usadoDe(p) === 0 && <button className="ec-btn ec-btn-ghost" type="button" aria-label="Borrar premio" onClick={() => borrar(p)}><Trash2 size={13} /></button>}
+                          {editId === p.id ? (
+                            <>
+                              <button className="ec-btn ec-btn-primary" type="button" onClick={() => guardarEdicion(p)}><Check size={13} /> Guardar</button>{" "}
+                              <button className="ec-btn ec-btn-ghost" type="button" onClick={() => setEditId(null)}>Cancelar</button>
+                            </>
+                          ) : (
+                            <>
+                              <button className="ec-btn ec-btn-ghost" type="button" onClick={() => empezarEdicion(p)}><Pencil size={13} /> Editar</button>{" "}
+                              {usadoDe(p) < totalDe(p) && <button className="ec-btn ec-btn-ghost" type="button" onClick={() => cambiarHabilitado([p.id], !p.habilitado)}>{p.habilitado ? "Deshabilitar" : "Habilitar"}</button>}{" "}
+                              {usadoDe(p) === 0 && <button className="ec-btn ec-btn-ghost" type="button" aria-label="Borrar premio" onClick={() => borrar(p)}><Trash2 size={13} /></button>}
+                            </>
+                          )}
                         </td>
                       </tr>
                     );
