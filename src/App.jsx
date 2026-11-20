@@ -2310,11 +2310,38 @@ function BotonComprobante({ vendor, rendicion, enviadoEl, onEnviado }) {
 
 const COLOR_PREMIO = "#C8891B";
 
-// "$ 765.000" -> 765000 (las planillas muestran montos sin decimales).
+// Convierte un monto tal como se ve en la planilla en número: "$ 765.000", "$ 50,000", "$3,270.00", "-$ 1.234,50"...
+// (la planilla puede mostrar los miles con punto o con coma, y los decimales al revés).
 function montoDeTexto(t) {
-  const s = String(t || "");
-  const n = Number(s.replace(/[^0-9]/g, "")) || 0;
-  return /-/.test(s) ? -n : n;
+  let s = String(t == null ? "" : t).trim();
+  const neg = /-/.test(s) || /^\(.*\)$/.test(s);
+  s = s.replace(/[^0-9.,]/g, "");
+  if (!s) return 0;
+  const ultimoPunto = s.lastIndexOf(".");
+  const ultimaComa = s.lastIndexOf(",");
+  let dec = "";
+  if (ultimoPunto >= 0 && ultimaComa >= 0) dec = ultimoPunto > ultimaComa ? "." : ",";
+  else {
+    const sep = ultimoPunto >= 0 ? "." : ultimaComa >= 0 ? "," : "";
+    if (sep) {
+      const cantidad = s.split(sep).length - 1;
+      const despues = s.length - s.lastIndexOf(sep) - 1;
+      if (cantidad === 1 && despues !== 3) dec = sep; // "12,5" o "3.27" son decimales; "50,000" y "765.000" son miles
+    }
+  }
+  let n;
+  if (dec) {
+    const i = s.lastIndexOf(dec);
+    n = Number(s.slice(0, i).replace(/[.,]/g, "") + "." + s.slice(i + 1).replace(/[.,]/g, ""));
+  } else {
+    n = Number(s.replace(/[.,]/g, ""));
+  }
+  n = n || 0;
+  return neg ? -n : n;
+}
+// Lo que queda por rendir: el número real que manda la planilla; si no viniera, se lee del texto.
+function montoARendir(r) {
+  return typeof r.aRendirNum === "number" ? r.aRendirNum : montoDeTexto(r.aRendir);
 }
 function ordenDeFecha(txt) {
   const m = String(txt || "").match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
@@ -2327,7 +2354,7 @@ function rendicionParaPremio(rendiciones) {
     if (String(r.montoPagado || "").trim() !== "") return false;
     if (String(r.estadoColor || "").trim() !== "") return false;
     if (/^\s*(reca|mp)\s*$/i.test(String(r.estado || ""))) return false;
-    return montoDeTexto(r.aRendir) > 0;
+    return montoARendir(r) > 0;
   });
   pendientes.sort((a, b) => ordenDeFecha(a.fecha) - ordenDeFecha(b.fecha));
   return pendientes[0] || null;
@@ -2379,7 +2406,7 @@ function PremioAplicar({ vendor, rendiciones, onChanged }) {
   useEffect(() => { cargar(); }, [cargar, rendiciones]);
 
   const destino = rendicionParaPremio(rendiciones);
-  const plan = destino && premios.length > 0 ? planPremios(premios, montoDeTexto(destino.aRendir)) : null;
+  const plan = destino && premios.length > 0 ? planPremios(premios, montoARendir(destino)) : null;
   const hayPremio = plan && plan.items.length > 0;
 
   const aplicar = async () => {
