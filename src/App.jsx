@@ -1282,7 +1282,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
           </div>
           <div className="ec-row2">
             <div className="ec-field"><label>Unidades</label><input type="number" min="1" value={unidades} onChange={(e) => setUnidades(e.target.value)} placeholder="0" /></div>
-            <div className="ec-field"><label>Precio{descPct > 0 ? ` (${descPct}% desc. por cantidad)` : ""}</label><input value={fmtMoney(precio)} disabled /></div>
+            <div className="ec-field"><label>Precio{descPct > 0 ? ` (−${descPct}%)` : ""}</label><input value={fmtMoney(precio)} disabled /></div>
           </div>
           {error && <div className="ec-error">{error}</div>}
           <button className="ec-btn ec-btn-ghost ec-btn-block" type="button" onClick={agregarAlCarrito} style={{ marginBottom: 10 }}>
