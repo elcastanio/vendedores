@@ -26,6 +26,21 @@ export function precioProducto(producto, categoria) {
   return Number(producto[precioCampoDeCategoria(categoria)] || 0);
 }
 
+// Descuento por cantidad en Comercio: hasta 5 unidades precio de lista, de 6 a 11 un 3% menos, de 12 en adelante un 5% menos.
+// Es la misma regla que usan las fórmulas de la planilla (el precio se redondea al peso).
+export function descuentoComercio(categoria, unidades) {
+  if (categoria !== "Comercio") return 0;
+  const u = Number(unidades) || 0;
+  return u >= 12 ? 0.05 : u >= 6 ? 0.03 : 0;
+}
+
+// Precio unitario según las unidades de esa línea (por producto).
+export function precioPorUnidades(producto, categoria, unidades) {
+  const base = precioProducto(producto, categoria);
+  const d = descuentoComercio(categoria, unidades);
+  return d > 0 ? Math.round(base * (1 - d)) : base;
+}
+
 // ---------- VENDORS ----------
 
 export async function fetchVendors() {
