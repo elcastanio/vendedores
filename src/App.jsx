@@ -816,7 +816,8 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
   const mesVista = sheets.nombreMesDeValor(mesConsulta); // mes que se muestra en la lista de abajo
   const esMesVistaReal = mesVista === mesReal;
   const productoSel = products.find((p) => p.id === productoId);
-  const precio = db.precioProducto(productoSel, categoria);
+  const precio = db.precioPorUnidades(productoSel, categoria, unidades);
+  const descPct = Math.round(db.descuentoComercio(categoria, unidades) * 100);
   const totalLinea = precio * (Number(unidades) || 0);
   const totalCarrito = carrito.reduce((acc, l) => acc + l.total, 0);
 
@@ -1135,7 +1136,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
     try {
       const r = await sheets.agregarLineaPedidoSheet(vendor.sheetUrl, mesVista, {
         filaRef: ultima.fila, cliente: g.cliente, productoRef: ultima.producto,
-        producto: prod.nombre, unidades: unid, precio: db.precioProducto(prod, g.categoria), enStock: agregando.enStock,
+        producto: prod.nombre, unidades: unid, precio: db.precioPorUnidades(prod, g.categoria, unid), enStock: agregando.enStock,
       });
       if (agregando.enStock && r && r.stockActualizado === false) alert("Producto agregado. Ojo: no encontré ese producto en tu solapa Stock (\"A la venta\"), revisalo a mano.");
       await refrescar();
@@ -1281,7 +1282,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
           </div>
           <div className="ec-row2">
             <div className="ec-field"><label>Unidades</label><input type="number" min="1" value={unidades} onChange={(e) => setUnidades(e.target.value)} placeholder="0" /></div>
-            <div className="ec-field"><label>Precio</label><input value={fmtMoney(precio)} disabled /></div>
+            <div className="ec-field"><label>Precio{descPct > 0 ? ` (${descPct}% desc. por cantidad)` : ""}</label><input value={fmtMoney(precio)} disabled /></div>
           </div>
           {error && <div className="ec-error">{error}</div>}
           <button className="ec-btn ec-btn-ghost ec-btn-block" type="button" onClick={agregarAlCarrito} style={{ marginBottom: 10 }}>
