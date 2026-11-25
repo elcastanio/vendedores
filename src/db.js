@@ -171,8 +171,12 @@ export async function bulkUpsertProducts(rows, existingProducts, campos) {
     if (!fila) fila = { id: prod.id, nombre: prod.nombre, sku: prod.sku || "", precio_minorista: prod.precio_minorista, precio_mayorista: prod.precio_mayorista, precio_granel: prod.precio_granel, precio_comercios: prod.precio_comercios };
     let toco = false;
     if (soloAlgunos) {
-      // Una celda vacía o en 0 NO pisa el precio que ya tiene el producto.
-      elegidos.forEach((c) => { const v = Number(r[c]); if (v > 0) { fila["precio_" + c] = v; toco = true; } });
+      // Una celda vacía NO pisa el precio que ya tiene el producto. Con un 0 escrito en la celda, el precio pasa a 0.
+      elegidos.forEach((c) => {
+        const v = Number(r[c]);
+        if (v > 0) { fila["precio_" + c] = v; toco = true; }
+        else if (r.ceros && r.ceros[c]) { fila["precio_" + c] = 0; toco = true; }
+      });
     } else {
       TODOS.forEach((c) => { fila["precio_" + c] = Number(r[c]) || 0; });
       toco = true;
