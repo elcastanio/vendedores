@@ -2803,6 +2803,9 @@ function parseCatalogWorkbook(wb) {
     return Number(limpio) || 0;
   };
 
+  // Una celda con un 0 escrito (no vacía) se marca: sirve para poner un precio en 0 cuando se actualiza un solo formato.
+  const esCeroEscrito = (v) => v !== "" && v !== null && v !== undefined && /\d/.test(String(v)) && num(v) === 0;
+
   const resultado = [];
   for (let i = headerRowIdx + 1; i < filas.length; i++) {
     const fila = filas[i];
@@ -2815,6 +2818,12 @@ function parseCatalogWorkbook(wb) {
       mayorista: colIndex.mayorista >= 0 ? num(fila[colIndex.mayorista]) : 0,
       granel: colIndex.granel >= 0 ? num(fila[colIndex.granel]) : 0,
       comercios: colIndex.comercios >= 0 ? num(fila[colIndex.comercios]) : 0,
+      ceros: {
+        minorista: colIndex.minorista >= 0 && esCeroEscrito(fila[colIndex.minorista]),
+        mayorista: colIndex.mayorista >= 0 && esCeroEscrito(fila[colIndex.mayorista]),
+        granel: colIndex.granel >= 0 && esCeroEscrito(fila[colIndex.granel]),
+        comercios: colIndex.comercios >= 0 && esCeroEscrito(fila[colIndex.comercios]),
+      },
     });
   }
   const columnas = ["minorista", "mayorista", "granel", "comercios"].filter((k) => colIndex[k] >= 0);
