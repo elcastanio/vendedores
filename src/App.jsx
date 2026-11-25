@@ -1756,6 +1756,9 @@ function TerminosCard({ vendor }) {
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [avisoMail, setAvisoMail] = useState(""); // "", "ok" o "error": envío del documento firmado a administración
+  const [mailCopia, setMailCopia] = useState(""); // mail (opcional) donde el vendedor quiere recibir su copia
+  const [avisoCopia, setAvisoCopia] = useState(""); // "", "ok" o "error": envío de la copia al mail del vendedor
+  const [copiaA, setCopiaA] = useState("");
 
   useEffect(() => {
     let vivo = true;
@@ -1775,6 +1778,8 @@ function TerminosCard({ vendor }) {
     const dniLimpio = dni.replace(/\D/g, "");
     if (!nombre.trim()) { setError("Completá tu nombre y apellido."); return; }
     if (dniLimpio.length < 7 || dniLimpio.length > 9) { setError("Ingresá un DNI válido (solo números)."); return; }
+    const mailLimpio = mailCopia.trim();
+    if (mailLimpio && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mailLimpio)) { setError("El mail no parece válido. Revisalo o dejalo vacío."); return; }
     if (!acepto) { setError("Tenés que tildar que leíste y aceptás los términos."); return; }
     if (!firma) { setError("Tocá el recuadro de firma y firmá con el dedo."); return; }
     setGuardando(true);
@@ -1788,9 +1793,11 @@ function TerminosCard({ vendor }) {
           titulo: TERMINOS_TITULO, clausulas: TERMINOS_CLAUSULAS, version: f.version,
           nombre: f.nombre, dni: f.dni, firma: f.firma, aceptadoEn: f.aceptadoEn,
         });
-        await sheets.enviarTerminosFirmadosSheet({ vendedor: vendor.nombre, version: f.version, nombreArchivo, base64 });
+        const r = await sheets.enviarTerminosFirmadosSheet({ vendedor: vendor.nombre, version: f.version, nombreArchivo, base64, copiaA: mailLimpio });
         setAvisoMail("ok");
-      } catch (e) { setAvisoMail("error"); }
+        setCopiaA(mailLimpio);
+        setAvisoCopia(mailLimpio ? (r && r.copiaEnviada ? "ok" : "error") : "");
+      } catch (e) { setAvisoMail("error"); if (mailLimpio) { setCopiaA(mailLimpio); setAvisoCopia("error"); } }
       descargar(f);
     } catch (e) { setError("No se pudo guardar la firma: " + e.message); }
     setGuardando(false);
@@ -1807,6 +1814,8 @@ function TerminosCard({ vendor }) {
             <div className="ec-sub" style={{ marginBottom: 10, color: TOKENS.olive, fontWeight: 600 }}>
               ✓ Firmados el {new Date(firmado.aceptadoEn).toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })}
               {avisoMail === "ok" && <div style={{ fontWeight: 400, color: TOKENS.text }}>Se envió una copia firmada a administración.</div>}
+              {avisoCopia === "ok" && <div style={{ fontWeight: 400, color: TOKENS.text }}>También te mandamos una copia a {copiaA}. Si no la ves, revisá la carpeta de spam.</div>}
+              {avisoCopia === "error" && <div className="ec-error" style={{ fontWeight: 400, marginTop: 6 }}>No se pudo enviar la copia a {copiaA}. Podés descargarla con el botón de abajo.</div>}
               {avisoMail === "error" && <div className="ec-error" style={{ fontWeight: 400, marginTop: 6 }}>Tu firma quedó guardada, pero no se pudo enviar la copia a administración. Avisales para que la descarguen.</div>}
             </div>
           ) : (
@@ -1827,6 +1836,7 @@ function TerminosCard({ vendor }) {
             <>
               <div className="ec-field"><label>Nombre y apellido</label><input value={nombre} onChange={(e) => setNombre(e.target.value)} /></div>
               <div className="ec-field"><label>DNI</label><input inputMode="numeric" value={dni} onChange={(e) => setDni(e.target.value)} placeholder="Solo números" /></div>
+              <div className="ec-field"><label>Mail para recibir una copia (opcional)</label><input type="email" inputMode="email" autoCapitalize="none" value={mailCopia} onChange={(e) => setMailCopia(e.target.value)} placeholder="tumail@ejemplo.com" /></div>
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, margin: "4px 0 12px", cursor: "pointer" }}>
                 <input type="checkbox" checked={acepto} onChange={(e) => setAcepto(e.target.checked)} />
                 Leí y acepto los términos y condiciones
