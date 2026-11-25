@@ -496,7 +496,9 @@ async function armarTerminosFirmados({ titulo, clausulas, version, nombre, dni, 
   doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(...TEXT_SOFT);
   doc.text(`Versión ${version}`, margen, y); y += 22;
 
-  clausulas.forEach(([tit, texto]) => {
+  // Apartado inicial con los datos de las partes: nombre y DNI del vendedor dentro del texto de los términos.
+  const partes = ["Partes", `Estos términos y condiciones se aceptan entre SUSU S.A. (CUIT 30-69016589-5), que comercializa bajo la marca El Castaño, y ${nombre}, DNI N.º ${dni}, en adelante "el vendedor".`];
+  [partes, ...clausulas].forEach(([tit, texto]) => {
     // La tipografía tiene que estar fijada ANTES de partir el texto en renglones; si no, los renglones se miden mal.
     doc.setFont("helvetica", "normal"); doc.setFontSize(10);
     const lineas = doc.splitTextToSize(texto, ancho).map((l) => l.trim());
