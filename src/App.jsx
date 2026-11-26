@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import {
   ClipboardList, Target, Package, Wallet, LogOut, Plus, Check, X, Loader2,
   ShieldCheck, Users, Boxes, ListChecks, ChevronRight, AlertTriangle, Upload,
-  ExternalLink, RefreshCw, Bell, BellOff, Pencil, FileDown, Printer, Trash2, Search, BookOpen, Trophy,
+  ExternalLink, RefreshCw, Bell, BellOff, Pencil, FileDown, Printer, Trash2, Search, BookOpen, Trophy, Menu, Database,
 } from "lucide-react";
 import * as db from "./db";
 import * as sheets from "./sheetsClient";
@@ -16,6 +16,10 @@ const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "castano2026";
 // Usuario de administración con acceso solo a la pestaña Pedidos.
 const PEDIDOS_USUARIO = "lvalladares";
 const PEDIDOS_PASSWORD = "1234";
+
+// Interruptor de los términos y condiciones para los vendedores: false = en el menú figuran como "Próximamente"
+// y no se pueden abrir; true = quedan habilitados para leer y firmar. Para avisarles, cambiá false por true.
+const TERMINOS_ACTIVOS = false;
 
 const TOKENS = {
   bg: "#F5F8FC", surface: "#FFFFFF", border: "#DAE2EC", text: "#14253A", textSoft: "#5A6B7E",
@@ -265,6 +269,7 @@ function LoginScreen({ vendors, onVendorLogin, onAdminLogin, onPedidosLogin }) {
 
 function VendorApp({ vendor, products, onLogout }) {
   const [tab, setTab] = useState("pedidos");
+  const [menuAbierto, setMenuAbierto] = useState(false);
   const [pedidosMes, setPedidosMes] = useState(null);
   const [pedidosError, setPedidosError] = useState("");
   const [rendiciones, setRendiciones] = useState(null);
@@ -402,10 +407,32 @@ function VendorApp({ vendor, products, onLogout }) {
               <span style={{ position: "absolute", top: -7, right: -7, background: TOKENS.rust, color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, minWidth: 17, height: 17, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>{noLeidos}</span>
             )}
           </button>
-          <button className="ec-btn ec-btn-ghost" onClick={() => setTab("catalogos")} aria-label="Catálogos" title="Catálogos" style={tab === "catalogos" ? { background: TOKENS.cream } : undefined}>
-            <BookOpen size={14} />
-          </button>
-          <button className="ec-btn ec-btn-ghost" onClick={onLogout} aria-label="Salir" title="Salir"><LogOut size={15} strokeWidth={3} /></button>
+          <div style={{ position: "relative" }}>
+            <button className="ec-btn ec-btn-ghost" onClick={() => setMenuAbierto((v) => !v)} aria-label="Menú" aria-expanded={menuAbierto} title="Menú"
+              style={menuAbierto || tab === "catalogos" || tab === "terminos" ? { background: TOKENS.cream } : undefined}>
+              <Menu size={16} />
+            </button>
+            {menuAbierto && (
+              <>
+                <div onClick={() => setMenuAbierto(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                <div role="menu" style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 50, minWidth: 270, background: "#fff", border: `1px solid ${TOKENS.border || "#E3E0D8"}`, borderRadius: 12, boxShadow: "0 8px 24px rgba(0,0,0,0.14)", padding: 6 }}>
+                  {[
+                    { icono: <BookOpen size={16} />, texto: "Catálogos", accion: () => setTab("catalogos") },
+                    { icono: <Database size={16} />, texto: "Base de datos", nota: "Próximamente", deshabilitado: true },
+                    { icono: <ShieldCheck size={16} />, texto: "Términos y condiciones", accion: () => setTab("terminos"), deshabilitado: !TERMINOS_ACTIVOS, nota: TERMINOS_ACTIVOS ? undefined : "Próximamente" },
+                    { icono: <LogOut size={16} />, texto: "Cerrar sesión", accion: onLogout, peligro: true },
+                  ].map((it) => (
+                    <button key={it.texto} type="button" role="menuitem" disabled={it.deshabilitado}
+                      onClick={() => { setMenuAbierto(false); if (it.accion) it.accion(); }}
+                      style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "11px 12px", background: "none", border: "none", borderRadius: 8, cursor: it.deshabilitado ? "default" : "pointer", font: "inherit", fontSize: 14, textAlign: "left", color: it.deshabilitado ? TOKENS.textSoft : it.peligro ? TOKENS.danger : TOKENS.text, opacity: it.deshabilitado ? 0.6 : 1 }}>
+                      {it.icono}<span style={{ flex: 1, whiteSpace: "nowrap" }}>{it.texto}</span>
+                      {it.nota && <span style={{ fontSize: 11, fontStyle: "italic" }}>{it.nota}</span>}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
       <div className="ec-content">
@@ -440,6 +467,7 @@ function VendorApp({ vendor, products, onLogout }) {
         )}
         {tab === "avisos" && <AvisosTab avisos={avisos} abierto={avisoAbierto} setAbierto={setAvisoAbierto} onLeerTodos={leerTodos} onIrAPedidos={() => setTab("pedidos")} onEliminar={eliminarAviso} datosPorMes={datosAvisos} cargando={cargandoAvisos} vendor={vendor} />}
         {tab === "catalogos" && <CatalogosTab />}
+        {TERMINOS_ACTIVOS && tab === "terminos" && <TerminosCard vendor={vendor} />}
         {tab === "pedidos" && <PedidosTab vendor={vendor} products={products} pedidos={pedidosMes} loadError={pedidosError} onChanged={cargarPedidosMes} mesReal={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "objetivo" && <ObjetivoTab vendor={vendor} pedidos={pedidosMes} loadError={pedidosError} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
         {tab === "equipo" && <EquipoTab vendor={vendor} mesRealNombre={mesActualVendor} mesRealClave={currentMonthKey()} />}
@@ -1429,10 +1457,7 @@ function PedidosTab({ vendor, products, pedidos, loadError, onChanged, mesReal, 
 
 function ObjetivoTab(props) {
   return (
-    <>
-      <ObjetivoContenido {...props} />
-      <TerminosCard vendor={props.vendor} />
-    </>
+    <ObjetivoContenido {...props} />
   );
 }
 
