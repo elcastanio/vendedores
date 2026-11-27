@@ -1535,23 +1535,25 @@ function ObjetivoContenido({ vendor, pedidos, loadError, mesRealNombre, mesRealC
   // Tasa base promedio según la mezcla de Minorista/Comercio vendida (para las proyecciones).
   const tasaBaseEfectiva = minoristaComercio > 0 ? comisionBase / minoristaComercio : baseComision;
 
-  const comisionMayorista = mayoristaGranel * (mayoristaGranel <= 5000000 ? 0.05 : 0.06);
+  const comisionMayorista = mayoristaGranel * (mayoristaGranel > 5000000 && objetivo > 0 ? 0.06 : 0.05);
 
   let comisionMinorista;
   let escalon;
   if (objetivo > 0) {
-    if (minoristaComercio < objetivo * 0.8) {
+    if (totalVentas < objetivo * 0.8) {
       comisionMinorista = comisionBase;
       escalon = "base";
-    } else if (minoristaComercio < objetivo) {
+    } else if (totalVentas < objetivo) {
       comisionMinorista = comisionBase + minoristaComercio * 0.035;
       escalon = "80%";
-    } else if (minoristaComercio === objetivo) {
+    } else if (Math.round(totalVentas * 100) === Math.round(objetivo * 100)) {
       comisionMinorista = comisionBase + minoristaComercio * 0.05;
       escalon = "objetivo";
     } else {
-      const exceso = minoristaComercio - objetivo;
-      comisionMinorista = comisionBase + minoristaComercio * 0.05 + (0.05 * exceso * exceso) / objetivo;
+      // Igual que la planilla de premios: 5% sobre Minorista+Comercio, más 0,5%
+      // de lo que Minorista+Comercio supere el objetivo (el exceso no cuenta Mayorista/Granel).
+      const excesoMin = Math.max(minoristaComercio - objetivo, 0);
+      comisionMinorista = comisionBase + minoristaComercio * 0.05 + 0.005 * excesoMin;
       escalon = "superado";
     }
   } else {
@@ -1561,27 +1563,30 @@ function ObjetivoContenido({ vendor, pedidos, loadError, mesRealNombre, mesRealC
   const bonoEquipo = objetivoInfo.equipoBonus || 0;
   const comisionTotal = comisionMinorista + comisionMayorista + bonoEquipo;
 
-  const pct = objetivo > 0 ? Math.min(100, Math.round((minoristaComercio / objetivo) * 100)) : 0;
-  const restante = Math.max(0, objetivo - minoristaComercio);
+  const pct = objetivo > 0 ? Math.min(100, Math.round((totalVentas / objetivo) * 100)) : 0;
+  const restante = Math.max(0, objetivo - totalVentas);
   const primerNombre = (vendor.nombre || "").trim().split(" ")[0];
 
   let mensajeMotivador = "";
   if (objetivo > 0) {
     if (escalon === "base") {
       const proximoUmbral = objetivo * 0.8;
-      const falta = proximoUmbral - minoristaComercio;
-      const comisionProyectada = proximoUmbral * tasaBaseEfectiva + proximoUmbral * 0.035;
+      const falta = proximoUmbral - totalVentas;
+      // Si lo que falta se vende como Minorista/Comercio, el extra del 3,5% se calcula sobre esas ventas.
+      const minProyectado = minoristaComercio + falta;
+      const comisionProyectada = minProyectado * tasaBaseEfectiva + minProyectado * 0.035;
       const ganancia = comisionProyectada - comisionMinorista;
       mensajeMotivador = `¡Vamos ${primerNombre}! Te faltan ${fmtMoney(falta)} en ventas para llegar al 80% del objetivo — ahí tu comisión sube a ${fmtMoney(comisionProyectada)} (+${fmtMoney(ganancia)}).`;
     } else if (escalon === "80%") {
-      const falta = objetivo - minoristaComercio;
-      const comisionProyectada = objetivo * tasaBaseEfectiva + objetivo * 0.05;
+      const falta = objetivo - totalVentas;
+      const minProyectado = minoristaComercio + falta;
+      const comisionProyectada = minProyectado * tasaBaseEfectiva + minProyectado * 0.05;
       const ganancia = comisionProyectada - comisionMinorista;
       mensajeMotivador = `¡Ya casi ${primerNombre}! Te faltan ${fmtMoney(falta)} para cumplir el objetivo — tu comisión pasaría a ${fmtMoney(comisionProyectada)} (+${fmtMoney(ganancia)}).`;
     } else if (escalon === "objetivo") {
       mensajeMotivador = `¡Objetivo cumplido, ${primerNombre}! De acá en más, cada peso extra que vendas suma premio creciente a tu comisión.`;
     } else {
-      const exceso = minoristaComercio - objetivo;
+      const exceso = totalVentas - objetivo;
       mensajeMotivador = `¡Vas superando el objetivo por ${fmtMoney(exceso)}, ${primerNombre}! Seguí vendiendo — cada peso extra te suma más premio.`;
     }
   }
@@ -1592,8 +1597,8 @@ function ObjetivoContenido({ vendor, pedidos, loadError, mesRealNombre, mesRealC
       <div style={{ maxWidth: 220, marginBottom: 16 }}><MesField label="Mes a consultar" value={mesSel} onChange={setMesSel} /></div>
       {objetivo > 0 ? (
         <>
-          <div className="ec-big-num">{fmtMoney(minoristaComercio)}</div>
-          <div className="ec-sub" style={{ marginBottom: 14 }}>vendido en Minorista + Comercio sobre una meta de {fmtMoney(objetivo)}</div>
+          <div className="ec-big-num">{fmtMoney(totalVentas)}</div>
+          <div className="ec-sub" style={{ marginBottom: 14 }}>vendido en total sobre una meta de {fmtMoney(objetivo)}</div>
           <div className="ec-progress-track"><div className="ec-progress-fill" style={{ width: `${pct}%` }} /></div>
           <div className="ec-sub" style={{ marginTop: 8 }}>
             {pct}% cumplido{restante > 0 ? ` · falta ${fmtMoney(restante)}` : ""}
